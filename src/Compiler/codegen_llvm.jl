@@ -1,4 +1,4 @@
-# NexusV LLVM Code Generation + Unroll Passes
+# Deprecated
 #
 #   Pipeline:
 #   Julia Function
@@ -29,7 +29,7 @@ We reuse `GPUCompiler.NativeCompilerTarget` under the hood.
 """
 const NexusVTarget = GPUCompiler.NativeCompilerTarget
 
-GPUCompiler.runtime_module(::GPUCompiler.CompilerJob{<:Any, NexusVCompilerParams}) = NexusV
+GPUCompiler.runtime_module(::GPUCompiler.CompilerJob{<:Any,NexusVCompilerParams}) = NexusV
 
 
 
@@ -54,8 +54,8 @@ function get_llvm_module(func::Function, arg_types::Type...)
 
     mi = GPUCompiler.methodinstance(typeof(func), types_tuple)
 
-    config = GPUCompiler.CompilerConfig(target, params; kernel = false)
-    job    = GPUCompiler.CompilerJob(mi, config)
+    config = GPUCompiler.CompilerConfig(target, params; kernel=false)
+    job = GPUCompiler.CompilerJob(mi, config)
 
     # Compile inside a fresh JuliaContext (owns the LLVM context lifetime)
     llvm_mod, _meta = GPUCompiler.JuliaContext() do ctx
@@ -110,7 +110,7 @@ LLVM's PassManager pipeline used here:
   3. `indvars`        – canonicalises induction variables.
   4. `loop-unroll`    – performs the actual unrolling.
 """
-function apply_unroll_pass(mod::LLVM.Module; factor::Int = 0, full::Bool = false)
+function apply_unroll_pass(mod::LLVM.Module; factor::Int=0, full::Bool=false)
     LLVM.@dispose pm = LLVM.NewPMModulePassManager() begin
         # Prerequisite: lift allocas → SSA so the loop passes see clean IR
         LLVM.add!(pm, LLVM.NewPMFunctionPassManager() do fpm
@@ -120,9 +120,9 @@ function apply_unroll_pass(mod::LLVM.Module; factor::Int = 0, full::Bool = false
 
             # LoopUnrollPass honour the user's factor / full flags
             if full
-                LLVM.add!(fpm, LLVM.LoopUnrollPass(; full_unroll_max_count = -1))
+                LLVM.add!(fpm, LLVM.LoopUnrollPass(; full_unroll_max_count=-1))
             elseif factor > 0
-                LLVM.add!(fpm, LLVM.LoopUnrollPass(; unroll_count = factor))
+                LLVM.add!(fpm, LLVM.LoopUnrollPass(; unroll_count=factor))
             else
                 LLVM.add!(fpm, LLVM.LoopUnrollPass())
             end
@@ -196,7 +196,7 @@ macro nexus_unroll(args...)
     end
 
     factor = 0
-    full   = false
+    full = false
     loop_expr = nothing
 
     if length(args) == 1
@@ -204,7 +204,7 @@ macro nexus_unroll(args...)
         loop_expr = args[end]
     else
         # Keyword form: @nexus_unroll factor=(number) for i in ...
-        for i in 1:(length(args) - 1)
+        for i in 1:(length(args)-1)
             arg = args[i]
             if Meta.isexpr(arg, :(=))
                 kw, val = arg.args[1], arg.args[2]
@@ -246,7 +246,7 @@ end
 # Downstream code calls: NexusV.get_unroll_hint(loop_id) -> (factor=4, full=false)
 # and uses it to call apply_unroll_pass with the right settings.
 
-const _UNROLL_HINTS  = Dict{UInt64, NamedTuple{(:factor, :full), Tuple{Int, Bool}}}()
+const _UNROLL_HINTS = Dict{UInt64,NamedTuple{(:factor, :full),Tuple{Int,Bool}}}()
 const _REGISTRY_LOCK = ReentrantLock()
 
 """
@@ -256,7 +256,7 @@ Register an unroll hint produced by `@nexus_unroll` at the given loop hash.
 """
 function register_unroll_hint!(id::UInt64, factor::Int, full::Bool)
     lock(_REGISTRY_LOCK) do
-        _UNROLL_HINTS[id] = (factor = factor, full = full)
+        _UNROLL_HINTS[id] = (factor=factor, full=full)
     end
 end
 

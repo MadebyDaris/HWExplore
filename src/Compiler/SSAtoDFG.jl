@@ -1,4 +1,8 @@
-# NexusV DFG Graph Generation
+# Deprecated
+#
+# Moving away from LLVM IR and targeting Julia’s Typed SSA IR (often casually
+# referred to as the AST or lowered IR) to avoid the "LLVM optimization destruction" 
+# problem
 #
 #   Pipeline:
 #   Julia Function
@@ -13,7 +17,7 @@ Represents a data dependency or flow between two DFG nodes.
 struct DFGEdge
     source_id::Int
     dest_id::Int
-    source_port::Int 
+    source_port::Int
     dest_port::Int
 end
 
@@ -32,11 +36,11 @@ end
 The top-level Data Flow Graph structure.
 """
 mutable struct DFGGraph
-    nodes::Dict{Int, DFGNode}
+    nodes::Dict{Int,DFGNode}
     edges::Vector{DFGEdge}
     next_id::Int            # Counter for unique node IDs
-    
-    DFGGraph() = new(Dict{Int, DFGNode}(), DFGEdge[], 1)
+
+    DFGGraph() = new(Dict{Int,DFGNode}(), DFGEdge[], 1)
 end
 
 # --- Basic API Stubs ---

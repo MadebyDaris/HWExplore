@@ -1,6 +1,8 @@
 # High-Level Compilation Interface
 # Provides user-facing macros and functions to compile Julia code for FPGAs
-
+#
+# Thanks to github.com/nidirene/FPGACompiler.jl
+#
 # ============================================================================
 # Global Registry for Macro Hints
 # ============================================================================
@@ -11,8 +13,8 @@
 Thread-safe registry for storing compilation hints from macros.
 Maps source location hashes to hint tuples.
 """
-const PIPELINE_HINTS = Dict{UInt64, NamedTuple{(:ii,), Tuple{Int}}}()
-const UNROLL_HINTS = Dict{UInt64, NamedTuple{(:factor, :full), Tuple{Int, Bool}}}()
+const PIPELINE_HINTS = Dict{UInt64,NamedTuple{(:ii,),Tuple{Int}}}()
+const UNROLL_HINTS = Dict{UInt64,NamedTuple{(:factor, :full),Tuple{Int,Bool}}}()
 const KERNEL_REGISTRY = Set{Symbol}()
 const REGISTRY_LOCK = ReentrantLock()
 
@@ -180,9 +182,9 @@ run(`aoc \$path`)            # Intel oneAPI
 ```
 """
 function fpga_code_native(f, types::Type{<:Tuple};
-                          format::Symbol=:ll,
-                          output::Union{String, Nothing}=nothing,
-                          params=FPGACompilerParams())
+    format::Symbol=:ll,
+    output::Union{String,Nothing}=nothing,
+    params=FPGACompilerParams())
 
     mod = fpga_compile(f, types; params=params)
 
@@ -582,7 +584,7 @@ This is a rough estimate based on IR analysis.
 function estimate_resources(f, types::Type{<:Tuple})
     mod = fpga_compile(f, types)
 
-    resources = Dict{String, Int}(
+    resources = Dict{String,Int}(
         "estimated_luts" => 0,
         "estimated_ffs" => 0,
         "estimated_dsps" => 0,
