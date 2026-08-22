@@ -1,5 +1,3 @@
-// tb_generated.cpp
-//
 // Verilator testbench for a generated NexusV datapath module.
 // Tests the standard Nexus port interface:
 //   clk_i, rst_ni, start_i, rs1_i, rs2_i, rd_o, done_o
@@ -8,7 +6,7 @@
 //   rs1=3, rs2=4 => (3*4)+5 = 17
 //   Latency: 4 cycles (MUL=2 cycles, ADD=1 cycle)
 
-#include "Vmac_plus_5.h"
+#include "f_1.h"
 #include "verilated.h"
 #include <iostream>
 
@@ -17,14 +15,14 @@ static vluint64_t sim_time = 0;
 double sc_time_stamp() { return sim_time; }
 
 // Toggle clock and evaluate
-static void tick(Vmac_plus_5* dut) {
+static void tick(Vf_1* dut) {
     dut->clk_i = 0; dut->eval(); sim_time++;
     dut->clk_i = 1; dut->eval(); sim_time++;
 }
 
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
-    Vmac_plus_5* dut = new Vmac_plus_5;
+    Vf_1* dut = new Vf_1;
 
     // Reset
     dut->rst_ni  = 0;
@@ -37,8 +35,8 @@ int main(int argc, char** argv) {
     dut->rst_ni  = 1;
 
     // Drive inputs: rs1=3, rs2=4, expected=(3*4)+5=17
-    dut->rs1_i   = 3;
-    dut->rs2_i   = 4;
+    dut->rs1_i   = 4;
+    dut->rs2_i   = 3;
     dut->start_i = 1;
     tick(dut);
     dut->start_i = 0;

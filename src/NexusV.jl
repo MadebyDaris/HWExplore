@@ -45,7 +45,6 @@ using .DFG_Builder
 
 
 # Frontend components
-include("Frontend/MockFrontend.jl")
 include("Frontend/IRTranslator.jl")
 include("Frontend/IRFrontend.jl")
 

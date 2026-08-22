@@ -14,28 +14,28 @@ module mac_plus_5 (
 
     // Combinational result wires
     logic [31:0] n5_comb;
-    logic [31:0] n4_comb;
+    logic [31:0] n3_comb;
 
     // Pipeline stage registers
     logic [31:0] n5_r4;
-    logic [31:0] n4_r2;
-    logic [31:0] n4_r3;
+    logic [31:0] n3_r2;
+    logic [31:0] n3_r3;
 
     logic [3:0] done_shift;
 
     // Combinational logic
-    assign n4_comb = rs1_i * rs2_i;
-    assign n5_comb = n4_r3 + 32'd5;
+    assign n3_comb = rs1_i * rs2_i;
+    assign n5_comb = n3_r3 + 32'd5;
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
             n5_r4 <= '0;
-            n4_r2 <= '0;
-            n4_r3 <= '0;
+            n3_r2 <= '0;
+            n3_r3 <= '0;
         end else if (!stall_i) begin
             n5_r4 <= n5_comb;
-            n4_r2 <= n4_comb;
-            n4_r3 <= n4_r2;
+            n3_r2 <= n3_comb;
+            n3_r3 <= n3_r2;
         end
     end
 

@@ -103,7 +103,7 @@ make -C obj_dir -f Vmy_accel.mk Vmy_accel
 ./obj_dir/Vmy_accel
 ```
 
-See [`docs/HW_Usage_Workflow.md`](docs/HW_Usage_Workflow.md) for the full walkthrough, including shell-level and waveform based debugging.
+See [`docs/Usage_and_Examples.md`](docs/Usage_and_Examples.md) for the full walkthrough, including shell-level and waveform based debugging.
 
 ## Project status
 
@@ -207,9 +207,9 @@ Nexus-V's long-term goal is to stop being "a generator for one X-HEEP SoC" and b
 
 ## Documentation
 
-- [Hardware Architecture](docs/Hardware.md)  Shell, datapaths, and CV-X-IF protocol overview
-- [Hardware Workflow](docs/HW_Usage_Workflow.md)  Step-by-step guide: Julia graph to RTL to Verilator simulation
-- [Project Pipeline](docs/Project_Pipeline.md)  End to end overview of the repository structure, toolchain, and development flow
+- [Architecture and Internals](docs/Architecture_and_Internals.md)  Shell, datapaths, CV-X-IF protocol overview, and project pipeline
+- [Usage and Examples](docs/Usage_and_Examples.md)  Step-by-step guide: Julia graph to RTL to Verilator simulation
+- [Baremetal and System Simulation](docs/Baremetal_and_System_Simulation.md)  Full system compilation, testing, and X-HEEP integration details
 
 
 ## License
