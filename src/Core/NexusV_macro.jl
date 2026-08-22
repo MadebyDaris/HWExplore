@@ -1,3 +1,77 @@
+# NexusV_macro.jl
+# Entry-point macros for NexusV hardware synthesis.
+#
+# @synthesize — the primary user-facing macro (Phase 2 entry point)
+# @nexus_accelerate — legacy macro (kept for backward compatibility)
+
+export @synthesize
+
+# ============================================================================
+# @synthesize — Primary Entry Point
+# ============================================================================
+
+"""
+    @synthesize f(a::T1, b::T2, ...)
+    @synthesize f(a, b, ...) types=Tuple{T1, T2}
+
+Synthesize a Julia function into a hardware Data-Flow Graph.
+
+This macro:
+1. Captures the function and its argument types
+2. Extracts the typed SSA IR via IRTools (Phase 2)
+3. Translates the IR into a NexusV DFG (Phase 3)
+4. Returns a `(HWGraph, FSMGraph)` tuple ready for scheduling
+
+# Examples
+
+```julia
+# With type annotations on the call expression:
+graph, fsm = @synthesize my_func(Int32(0), Int32(0))
+
+# Then pipe through the rest of the NexusV pipeline:
+schedule_asap!(graph)
+emit_verilog(graph, "my_func.sv")
+```
+
+# Notes
+- The arguments in the call expression are used only for type inference.
+  Their values serve as representative inputs for IR extraction.
+- The function must be type-stable for synthesis to succeed.
+"""
+macro synthesize(call_expr)
+    # Validate: must be a function call expression
+    if !Meta.isexpr(call_expr, :call)
+        error("[NexusV] @synthesize expects a function call expression, e.g. @synthesize f(Int32(0), Int32(0))")
+    end
+
+    func_name = call_expr.args[1]
+    call_args = call_expr.args[2:end]
+
+    # Generate code that:
+    # 1. Evaluates the arguments to get concrete values (for type inference)
+    # 2. Calls extract_and_translate with the function and inferred types
+    quote
+        let _f = $(esc(func_name)),
+            _args = ($(map(esc, call_args)...),),
+            _types = Tuple{typeof.(_args)...}
+
+            extract_and_translate(_f, _types; name=$(string(func_name)))
+        end
+    end
+end
+
+# ============================================================================
+# @nexus_accelerate — Legacy Macro (Backward Compatibility)
+# ============================================================================
+
+"""
+    @nexus_accelerate function_definition
+
+Legacy macro that intercepts a function definition and redirects it to
+the NexusV hardware compilation pipeline.
+
+**Deprecated**: Use `@synthesize f(args...)` instead for the full Phase 2→3 pipeline.
+"""
 macro nexus_accelerate(fn_def)
     # 1. Validate and capture the function syntax (supports both standard and short forms)
     if !(@capture(fn_def, function name_(args__) body_ end) || @capture(fn_def, name_(args__) = body_))

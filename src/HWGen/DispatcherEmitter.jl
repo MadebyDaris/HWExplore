@@ -228,3 +228,7 @@ function emit_dispatcher(stateful::Union{StatefulEntry,Nothing},
     summary = has_stateful ? "1 stateful + $(N) stateless" : "$(N) stateless"
     println("Emitted dispatcher: $filepath  ($(summary) datapath(s))")
 end
+
+# Convenience overload: no stateful datapath
+emit_dispatcher(stateless::Vector{DatapathEntry}, filepath::String) =
+    emit_dispatcher(nothing, stateless, filepath)

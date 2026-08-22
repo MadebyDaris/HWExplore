@@ -3,13 +3,11 @@ module NexusV
 using MacroTools
 using LLVM
 using GPUCompiler
+using IRTools
 
 # Public API
 # Core macros
-export @nexus_accelerate
-
-# LLVM code generation
-export get_llvm_module, get_llvm_ir
+export @nexus_accelerate, @synthesize
 
 # Optimization passes
 export apply_unroll_pass
@@ -24,6 +22,10 @@ export register_unroll_hint!, get_unroll_hint, clear_unroll_hints!
 export Opcode, OP_ARG, OP_CONST, OP_ADD, OP_SUB, OP_MUL, OP_RET
 export OP_SHR, OP_SHL, OP_AND, OP_OR, OP_XOR, OP_MOD, OP_MUX
 export DFGNode, HWGraph, OP_LATENCY
+
+# IR Extraction & Translation (Phase 2 & 3)
+export extract_ir, extract_and_translate, translate_ir_to_dfg
+export FSMState, FSMGraph
 
 # HW Generation
 export schedule_asap!, topological_sort, finish_cycle
@@ -40,11 +42,12 @@ include("Core/DFG_Builder.jl")
 using .DFG_Builder
 
 # Compiler components
-include("Compiler/NexusV_codegen.jl")
-include("Compiler/NexusV_codegen_llvm.jl")
+
 
 # Frontend components
 include("Frontend/MockFrontend.jl")
+include("Frontend/IRTranslator.jl")
+include("Frontend/IRFrontend.jl")
 
 # Hardware Generation
 include("HWGen/PrimitiveLibrary.jl")

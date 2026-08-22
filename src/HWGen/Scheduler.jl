@@ -15,7 +15,12 @@ function opcode_latency(op)
 end
 
 function primitive_latency(node)
-    return PRIMITIVES[node.primitive].latency
+    if haskey(PRIMITIVES, node.primitive)
+        return PRIMITIVES[node.primitive].latency
+    else
+        # Unknown primitive (e.g. :opaque from IRTranslator) — use node's own latency or default 1
+        return node.latency > 0 ? node.latency : 1
+    end
 end
 
 # The cycle on which a node's result becomes available for consumers.

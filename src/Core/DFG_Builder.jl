@@ -68,6 +68,8 @@ const OP_LATENCY = Dict{Opcode,Int}(
 # - const_val:       only set for OP_CONST nodes
 # - scheduled_cycle: filled in by the Scheduler; 0 means unscheduled
 # - latency:         number of clock cycles this operation requires
+# - julia_type:      pre-lowered Julia type (e.g. Matrix{Float32}) for
+#                    downstream BRAM/AXI generation (Phase 2 type preservation)
 mutable struct DFGNode
     id::Int
     op::Opcode
@@ -78,7 +80,12 @@ mutable struct DFGNode
     latency::Int
     primitive::Union{Nothing,Symbol}
     primitive_params::Dict{Symbol,Any}
+    julia_type::Any
 end
+
+# Backward-compatible 9-arg constructor — julia_type defaults to nothing
+DFGNode(id, op, bw, inputs, cv, sc, lat, prim, pp) =
+    DFGNode(id, op, bw, inputs, cv, sc, lat, prim, pp, nothing)
 
 # The top-level Data Flow Graph.
 # - name:          Verilog module name
