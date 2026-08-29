@@ -34,10 +34,26 @@ finish_cycle(node::DFGNode)::Int =
     node.scheduled_cycle + node.latency - 1
 
 # Returns node IDs in topological order (sources first) via Kahn's algorithm.
+# OP_REG nodes have a structural back-edge in inputs[2] (the loop-body update
+# value). That edge is loop-carried and must NOT be counted as a forward
+# dependency — only inputs[1] (the init value) is a true forward edge.
+#
+# NOTE: A node may list the same input id more than once (e.g. ADD(x, x)).
+# We treat the graph as a multi-graph for edge counting so that Kahn's
+# in-degree arithmetic stays consistent: each slot in forward_inputs contributes
+# one unit of in-degree, and each processing step decrements exactly the count
+# of times the processed id appears in the consumer's forward_inputs.
 function topological_sort(graph::HWGraph)::Vector{Int}
+    # Helper: return the forward-edge inputs for a node.
+    # For OP_REG, only inputs[1] is a forward dependency (inputs[2] is back-edge).
+    function forward_inputs(node)
+        node.op == OP_REG && length(node.inputs) >= 2 ? node.inputs[1:1] : node.inputs
+    end
+
+    # in_degree[id] = number of forward-edge input slots (counting duplicates)
     in_degree = Dict(id => 0 for id in keys(graph.nodes))
     for node in values(graph.nodes)
-        for _ in node.inputs
+        for _ in forward_inputs(node)
             in_degree[node.id] += 1
         end
     end
@@ -49,8 +65,11 @@ function topological_sort(graph::HWGraph)::Vector{Int}
         id = popfirst!(queue)
         push!(order, id)
         for node in values(graph.nodes)
-            if id in node.inputs
-                in_degree[node.id] -= 1
+            fi = forward_inputs(node)
+            # Count how many times `id` appears in this node's forward inputs
+            cnt = count(==(id), fi)
+            if cnt > 0
+                in_degree[node.id] -= cnt
                 if in_degree[node.id] == 0
                     push!(queue, node.id)
                 end
@@ -61,6 +80,7 @@ function topological_sort(graph::HWGraph)::Vector{Int}
     length(order) == length(graph.nodes) || error("Cycle in DFG -- cannot schedule.")
     return order
 end
+
 
 # Multi-cycle-aware ASAP scheduling.
 #
@@ -92,6 +112,12 @@ function schedule_asap!(graph::HWGraph; resources=Dict())
         elseif node.op == OP_RET
             dep = graph.nodes[node.inputs[1]]
             node.scheduled_cycle = finish_cycle(dep)
+        elseif node.op == OP_REG
+            # OP_REG: only inputs[1] (init value) is a forward dependency.
+            # inputs[2] is the loop-body update — a back-edge, not a data
+            # dependency in the combinational scheduling sense.
+            dep = graph.nodes[node.inputs[1]]
+            node.scheduled_cycle = finish_cycle(dep) + 1
         else
             max_dep_finish = maximum(finish_cycle(graph.nodes[dep]) for dep in node.inputs)
             node.scheduled_cycle = max_dep_finish + 1
@@ -130,10 +156,17 @@ function schedule_asap!(graph::HWGraph; resources=Dict())
         ready = Int[]
         for id in collect(unscheduled)
             node = graph.nodes[id]
-            deps_scheduled = all(graph.nodes[d].scheduled_cycle != 0 for d in node.inputs)
+            deps_scheduled = all(
+                graph.nodes[d].scheduled_cycle != 0
+                for d in (node.op == OP_REG && length(node.inputs) >= 2
+                           ? node.inputs[1:1]   # only forward dep for OP_REG
+                           : node.inputs)
+            )
             if deps_scheduled
-                # earliest dynamic start based on actual deps
-                earliest = isempty(node.inputs) ? 1 : maximum(finish_cycle(graph.nodes[d]) for d in node.inputs) + 1
+                # earliest dynamic start based on actual forward deps
+                fwd_deps = (node.op == OP_REG && length(node.inputs) >= 2
+                             ? node.inputs[1:1] : node.inputs)
+                earliest = isempty(fwd_deps) ? 1 : maximum(finish_cycle(graph.nodes[d]) for d in fwd_deps) + 1
                 if earliest <= cycle
                     push!(ready, id)
                 end

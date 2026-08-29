@@ -1,7 +1,7 @@
 # VerilogEmitter.jl
 # Depends on DFG_Builder types and Scheduler (finish_cycle) being available.
 
-export emit_verilog
+export emit_verilog, emit_fsm_verilog
 
 # Map a DFG opcode to its SystemVerilog operator.
 function op_to_sv(op::Opcode)::String
@@ -25,6 +25,9 @@ end
 
 comb_wire(id::Int) = "n$(id)_comb"
 reg_wire(id::Int, c::Int) = "n$(id)_r$(c)"
+# State FSM-specific wire names
+state_ff_wire(id::Int) = "n$(id)_ff"
+
 
 # Emit a pipelined SystemVerilog module from a scheduled HWGraph.
 #
@@ -135,13 +138,13 @@ function emit_verilog(graph::HWGraph, filepath::String)
                 rhs_a = resolve(node.inputs[1], cyc)
                 rhs_b = resolve(node.inputs[2], cyc)
                 if node.op == OP_LT
-                    push!(lines, "    assign $lhs = {$(W-1)'b0, \\$signed($rhs_a) < \\$signed($rhs_b)};")
+                    push!(lines, "    assign $lhs = {$(W-1)'b0, \$signed($rhs_a) < \$signed($rhs_b)};")
                 elseif node.op == OP_LE
-                    push!(lines, "    assign $lhs = {$(W-1)'b0, \\$signed($rhs_a) <= \\$signed($rhs_b)};")
+                    push!(lines, "    assign $lhs = {$(W-1)'b0, \$signed($rhs_a) <= \$signed($rhs_b)};")
                 elseif node.op == OP_GT
-                    push!(lines, "    assign $lhs = {$(W-1)'b0, \\$signed($rhs_a) > \\$signed($rhs_b)};")
+                    push!(lines, "    assign $lhs = {$(W-1)'b0, \$signed($rhs_a) > \$signed($rhs_b)};")
                 elseif node.op == OP_GE
-                    push!(lines, "    assign $lhs = {$(W-1)'b0, \\$signed($rhs_a) >= \\$signed($rhs_b)};")
+                    push!(lines, "    assign $lhs = {$(W-1)'b0, \$signed($rhs_a) >= \$signed($rhs_b)};")
                 elseif node.op in (OP_EQ, OP_NEQ, OP_LTU, OP_LEU, OP_GTU, OP_GEU)
                     sv_op = op_to_sv(node.op)
                     push!(lines, "    assign $lhs = {$(W-1)'b0, $rhs_a $sv_op $rhs_b};")
@@ -222,3 +225,410 @@ function emit_verilog(graph::HWGraph, filepath::String)
     write(filepath, join(lines, "\n") * "\n")
     println("Emitted: $filepath  (latency = $(graph.latency) cycle(s))")
 end
+
+
+# Sequential / FSM Verilog emitter
+#
+# For generating a state-machine wrapper around the per-state DFG datapath.
+# Interface is identical to emit_verilog so modules are plug-compatible:
+#   clk_i, rst_ni, start_i, stall_i, rs1_i [...], rd_o, done_o
+#
+# State encoding
+#   S_IDLE  waiting for start_i
+#   S_INIT  one-cycle initialisation (seed OP_REG registers from args)
+#   S_B<n>  one state per basic block (entry block first, then body, exit)
+#   S_DONE  asserts done_o for one cycle, then returns to S_IDLE
+#
+# If any state's DFG nodes have latency > 1 (as computed by schedule_asap),
+# a `cycle_ctr` register tracks progress within that state.  The state machine
+# stays in S_B<n> until cycle_ctr reaches the body latency.
+#
+# Precondition: schedule_asap!(graph) must be called before this function.
+"""
+    emit_fsm_verilog(graph::HWGraph, fsm::FSMGraph, filepath::String;
+                     analysis::Union{FSMAnalysis,Nothing}=nothing)
+Emit a sequential (FSM-based) SystemVerilog module for the given graph.
+If `analysis` is not provided, `analyse_fsm` is called automatically.
+"""
+function emit_fsm_verilog(graph::HWGraph, fsm::FSMGraph, filepath::String;
+    analysis::Union{FSMAnalysis,Nothing}=nothing)
+
+    # Check that the FSM is valid, if not, run analysis
+    if analysis === nothing
+        analysis = analyse_fsm(graph, fsm)
+    end
+
+    W = 32 # default data width (same as combinational emitter)
+    arg_ids = graph.graph_inputs
+    ret_node = graph.nodes[graph.graph_outputs[1]]
+    out_id = ret_node.inputs[1]
+
+    port_names = ["rs1_i", "rs2_i", "rs3_i", "rs4_i",
+        "rs5_i", "rs6_i", "rs7_i", "rs8_i"]
+
+    lines = String[]
+
+    # helpers
+    # Emit a signal name for a DFGNode in FSM context.
+    # OP_ARG  -> port input directly
+    # OP_CONST -> literal
+    # live-across or OP_REG -> state_ff_wire (the persisting register)
+    # everything else -> comb_wire
+    function fsm_resolve(dep_id::Int)::String
+        dep = graph.nodes[dep_id]
+        if dep.op == OP_ARG
+            idx = findfirst(==(dep_id), arg_ids)
+            return idx !== nothing ? port_names[idx] : "rs1_i"
+        elseif dep.op == OP_CONST
+            cv = dep.const_val !== nothing ? dep.const_val : 0
+            return "$(W)'d$(cv)"
+        elseif dep_id in analysis.live_across || dep.op == OP_REG
+            return state_ff_wire(dep_id)
+        else
+            return comb_wire(dep_id)
+        end
+    end
+
+    # State name for a block id
+    state_name(bid::Int) = "S_B$(bid)"
+
+    # Total number of states: IDLE + INIT + one per block + DONE
+    n_blocks = length(fsm.states)
+    total_states = n_blocks + 3   # IDLE, INIT, blocks..., DONE
+    sbits = max(1, ceil(Int, log2(total_states + 1)))
+
+    # Assign numeric encoding
+    S_IDLE = 0
+    S_INIT = 1
+    # Block states start at 2; we sort by state_order for a clean encoding
+    block_enc = Dict{Int,Int}()
+    for (i, bid) in enumerate(analysis.state_order)
+        block_enc[bid] = i + 1   # 2, 3, 4, ...
+    end
+    S_DONE = n_blocks + 2
+
+    # port list
+    push!(lines, "// Auto-generated by NexusV VerilogEmitter (FSM backend)")
+    push!(lines, "// Graph: $(graph.name)  |  States: $(n_blocks) block(s)")
+    push!(lines, "")
+    push!(lines, "module $(graph.name) (")
+    push!(lines, "    input  logic        clk_i,")
+    push!(lines, "    input  logic        rst_ni,")
+    push!(lines, "    input  logic        start_i,")
+    push!(lines, "    input  logic        stall_i,")
+    push!(lines, "    input  logic [$(W-1):0] rs1_i,")
+    push!(lines, "    input  logic [$(W-1):0] rs2_i,")
+    for k in 3:length(arg_ids)
+        push!(lines, "    input  logic [$(W-1):0] $(port_names[k]),")
+    end
+    push!(lines, "    output logic [$(W-1):0] rd_o,")
+    push!(lines, "    output logic        done_o")
+    push!(lines, ");")
+    push!(lines, "")
+
+    # state encoding
+    push!(lines, "    // State encoding")
+    push!(lines, "    localparam integer S_IDLE = $(S_IDLE);")
+    push!(lines, "    localparam integer S_INIT = $(S_INIT);")
+    for bid in analysis.state_order
+        push!(lines, "    localparam integer $(state_name(bid)) = $(block_enc[bid]);")
+    end
+    push!(lines, "    localparam integer S_DONE = $(S_DONE);")
+    push!(lines, "")
+    push!(lines, "    logic [$(sbits-1):0] state, state_next;")
+    push!(lines, "")
+
+    # compute per-state max latency for sub-cycle counter
+    # Group DFG nodes (excluding ARG/CONST/RET) by their state
+    nodes_by_state = Dict{Int,Vector{Int}}(bid => Int[] for bid in keys(fsm.states))
+    for (nid, sid) in fsm.node_state
+        node = graph.nodes[nid]
+        node.op in (OP_ARG, OP_CONST, OP_RET) && continue
+        haskey(nodes_by_state, sid) && push!(nodes_by_state[sid], nid)
+    end
+
+    # Max latency within each state (after schedule_asap!)
+    state_latency = Dict{Int,Int}()
+    for (bid, nids) in nodes_by_state
+        if isempty(nids)
+            state_latency[bid] = 1
+        else
+            max_lat = maximum(
+                finish_cycle(graph.nodes[nid]) - graph.nodes[nid].scheduled_cycle + 1
+                for nid in nids
+            )
+            state_latency[bid] = max(1, max_lat)
+        end
+    end
+
+    max_body_lat = isempty(state_latency) ? 1 : maximum(values(state_latency))
+    need_ctr = max_body_lat > 1
+    ctr_bits = need_ctr ? max(1, ceil(Int, log2(max_body_lat + 1))) : 1
+
+    if need_ctr
+        push!(lines, "    // Sub-cycle counter for multi-cycle states")
+        push!(lines, "    logic [$(ctr_bits-1):0] cycle_ctr;")
+        push!(lines, "")
+    end
+
+    # combinational wire declarations
+    push!(lines, "    // Combinational result wires")
+    for (id, node) in graph.nodes
+        node.op in (OP_ARG, OP_CONST, OP_RET, OP_REG) && continue
+        push!(lines, "    logic [$(W-1):0] $(comb_wire(id));")
+    end
+    push!(lines, "")
+
+    # state-crossing FF declarations
+    cross_ff_ids = sort(collect(
+        union(analysis.live_across, analysis.reg_nodes)
+    ))
+    if !isempty(cross_ff_ids)
+        push!(lines, "    // State-crossing flip-flops")
+        for id in cross_ff_ids
+            push!(lines, "    logic [$(W-1):0] $(state_ff_wire(id));")
+        end
+        push!(lines, "")
+    end
+
+    # output capture register
+    push!(lines, "    logic [$(W-1):0] rd_capture;")
+    push!(lines, "")
+
+    # state register
+    push!(lines, "    always_ff @(posedge clk_i or negedge rst_ni) begin")
+    push!(lines, "        if (!rst_ni) state <= $(sbits)'(S_IDLE);")
+    push!(lines, "        else if (!stall_i) state <= state_next;")
+    push!(lines, "    end")
+    push!(lines, "")
+
+    if need_ctr
+        push!(lines, "    // Sub-cycle counter register")
+        push!(lines, "    always_ff @(posedge clk_i or negedge rst_ni) begin")
+        push!(lines, "        if (!rst_ni) begin")
+        push!(lines, "            cycle_ctr <= '0;")
+        push!(lines, "        end else if (!stall_i) begin")
+        push!(lines, "            if (state != state_next)")
+        push!(lines, "                cycle_ctr <= '0;")
+        push!(lines, "            else")
+        push!(lines, "                cycle_ctr <= cycle_ctr + 1'b1;")
+        push!(lines, "        end")
+        push!(lines, "    end")
+        push!(lines, "")
+    end
+
+    # next-state combinational logic
+    push!(lines, "    // Next-state logic")
+    push!(lines, "    always_comb begin")
+    push!(lines, "        state_next = state;")
+    push!(lines, "        case (state)")
+    push!(lines, "            S_IDLE: begin")
+    push!(lines, "                if (start_i) state_next = $(sbits)'(S_INIT);")
+    push!(lines, "            end")
+    push!(lines, "            S_INIT: state_next = $(sbits)'($(state_name(analysis.state_order[1])));")
+
+    for bid in analysis.state_order
+        state = fsm.states[bid]
+        lat = get(state_latency, bid, 1)
+        enc = block_enc[bid]
+
+        push!(lines, "            $(state_name(bid)): begin")
+
+        if lat > 1 && need_ctr
+            push!(lines, "                if (cycle_ctr < $(ctr_bits)'d$(lat - 1)) begin")
+            push!(lines, "                    state_next = $(sbits)'d$(enc); // stay")
+            push!(lines, "                end else begin")
+            indent = "                    "
+        else
+            indent = "                "
+        end
+
+        true_succ = state.true_successor
+        false_succ = state.false_successor
+
+        if true_succ !== nothing && false_succ !== nothing
+            # Conditional branch
+            cond_id = state.entry_cond
+            cond_sig = cond_id !== nothing ? fsm_resolve(cond_id) : "1'b1"
+            t_name = haskey(block_enc, true_succ) ? state_name(true_succ) : "S_DONE"
+            f_name = haskey(block_enc, false_succ) ? state_name(false_succ) : "S_DONE"
+            push!(lines, "$(indent)if (|$(cond_sig))")
+            push!(lines, "$(indent)    state_next = $(sbits)'($(t_name));")
+            push!(lines, "$(indent)else")
+            push!(lines, "$(indent)    state_next = $(sbits)'($(f_name));")
+        elseif true_succ !== nothing
+            # Unconditional branch
+            # Detect if this is a loop back-edge
+            if (bid, true_succ) in analysis.back_edges
+                # Back to loop header
+                t_name = haskey(block_enc, true_succ) ? state_name(true_succ) : "S_DONE"
+                push!(lines, "$(indent)state_next = $(sbits)'($(t_name));")
+            else
+                t_name = haskey(block_enc, true_succ) ? state_name(true_succ) : "S_DONE"
+                push!(lines, "$(indent)state_next = $(sbits)'($(t_name));")
+            end
+        else
+            # No successor → done
+            push!(lines, "$(indent)state_next = $(sbits)'(S_DONE);")
+        end
+
+        if lat > 1 && need_ctr
+            push!(lines, "                end")
+        end
+        push!(lines, "            end")
+    end
+
+    push!(lines, "            S_DONE: state_next = $(sbits)'(S_IDLE);")
+    push!(lines, "            default: state_next = $(sbits)'(S_IDLE);")
+    push!(lines, "        endcase")
+    push!(lines, "    end")
+    push!(lines, "")
+
+    # per-state combinational datapath
+    push!(lines, "    // Per-state combinational datapath")
+    push!(lines, "    always_comb begin")
+    # Default all comb wires to 0 to avoid latches
+    for (id, node) in graph.nodes
+        node.op in (OP_ARG, OP_CONST, OP_RET, OP_REG) && continue
+        push!(lines, "        $(comb_wire(id)) = '0;")
+    end
+    push!(lines, "")
+
+    for bid in analysis.state_order
+        state = fsm.states[bid]
+        nids = sort(get(nodes_by_state, bid, Int[]))
+        isempty(nids) && continue
+
+        push!(lines, "        if (state == $(sbits)'($(state_name(bid)))) begin")
+        for nid in nids
+            node = graph.nodes[nid]
+            node.op in (OP_ARG, OP_CONST, OP_RET, OP_REG) && continue
+            lhs = comb_wire(nid)
+
+            if node.op == OP_MUX
+                length(node.inputs) >= 3 || continue
+                rhs_cond = fsm_resolve(node.inputs[1])
+                rhs_true = fsm_resolve(node.inputs[2])
+                rhs_false = fsm_resolve(node.inputs[3])
+                push!(lines, "            assign $(lhs) = |$(rhs_cond) ? $(rhs_true) : $(rhs_false);")
+            elseif length(node.inputs) >= 2
+                rhs_a = fsm_resolve(node.inputs[1])
+                rhs_b = fsm_resolve(node.inputs[2])
+                if node.op == OP_LT
+                    push!(lines, "            assign $(lhs) = {$(W-1)'b0, \$signed($(rhs_a)) < \$signed($(rhs_b))};")
+                elseif node.op == OP_LE
+                    push!(lines, "            assign $(lhs) = {$(W-1)'b0, \$signed($(rhs_a)) <= \$signed($(rhs_b))};")
+                elseif node.op == OP_GT
+                    push!(lines, "            assign $(lhs) = {$(W-1)'b0, \$signed($(rhs_a)) > \$signed($(rhs_b))};")
+                elseif node.op == OP_GE
+                    push!(lines, "            assign $(lhs) = {$(W-1)'b0, \$signed($(rhs_a)) >= \$signed($(rhs_b))};")
+                elseif node.op in (OP_EQ, OP_NEQ, OP_LTU, OP_LEU, OP_GTU, OP_GEU)
+                    sv_op = op_to_sv(node.op)
+                    push!(lines, "            assign $(lhs) = {$(W-1)'b0, $(rhs_a) $(sv_op) $(rhs_b)};")
+                else
+                    sv_op = op_to_sv(node.op)
+                    push!(lines, "            assign $(lhs) = $(rhs_a) $(sv_op) $(rhs_b);")
+                end
+            elseif length(node.inputs) == 1
+                rhs_a = fsm_resolve(node.inputs[1])
+                push!(lines, "            assign $(lhs) = $(rhs_a);")
+            end
+        end
+        push!(lines, "        end")
+    end
+
+    push!(lines, "    end")
+    push!(lines, "")
+
+    # state-crossing flip-flops
+    # Two kinds of registers:
+    #   OP_REG (loop-carried phi)  :  mux between init-value and update-value
+    #   live_across (wire capture) :  capture comb_wire at end of producing state
+    if !isempty(cross_ff_ids)
+        push!(lines, "    // State-crossing and loop-carried registers")
+        push!(lines, "    always_ff @(posedge clk_i or negedge rst_ni) begin")
+        push!(lines, "        if (!rst_ni) begin")
+        for id in cross_ff_ids
+            push!(lines, "            $(state_ff_wire(id)) <= '0;")
+        end
+        push!(lines, "        end else if (!stall_i) begin")
+
+        for id in cross_ff_ids
+            node = graph.nodes[id]
+            ff = state_ff_wire(id)
+
+            if node.op == OP_REG
+                # OP_REG: inputs = [init_val, update_val]
+                # init_val  comes from the non-back-edge predecessor (pre-loop forward edge)
+                # update_val comes from the loop body (back-edge predecessor)
+                # We use the producing state of init_val to decide when to load init vs update.
+                if length(node.inputs) >= 2
+                    init_id = node.inputs[1]
+                    update_id = node.inputs[2]
+                    init_sig = fsm_resolve(init_id)
+                    update_sig = fsm_resolve(update_id)
+                    # Find the state that holds the OP_REG itself (the loop header)
+                    header_bid = get(fsm.node_state, id, -1)
+                    # Pre-loop state: any predecessor of the header that is NOT a back-edge
+                    pre_loop_bids = filter(
+                        p -> (p, header_bid) ∉ analysis.back_edges,
+                        get(fsm.states[header_bid].predecessors, header_bid, fsm.states[header_bid].predecessors)
+                    )
+                    # Fallback: use S_INIT as the pre-loop state
+                    if isempty(pre_loop_bids)
+                        pre_cond = "state == $(sbits)'(S_INIT)"
+                    else
+                        pre_cond = join(
+                            ["state == $(sbits)'($(state_name(p)))" for p in pre_loop_bids],
+                            " || "
+                        )
+                    end
+                    push!(lines, "            if ($(pre_cond))")
+                    push!(lines, "                $(ff) <= $(init_sig);")
+                    push!(lines, "            else")
+                    push!(lines, "                $(ff) <= $(update_sig);")
+                end
+            else
+                # live_across: capture the combinational result in the producing state
+                producer_state_bid = get(fsm.node_state, id, -1)
+                if producer_state_bid != -1 && haskey(block_enc, producer_state_bid)
+                    push!(lines, "            if (state == $(sbits)'($(state_name(producer_state_bid))))")
+                    push!(lines, "                $(ff) <= $(comb_wire(id));")
+                else
+                    push!(lines, "            $(ff) <= $(comb_wire(id));")
+                end
+            end
+        end
+
+        push!(lines, "        end")
+        push!(lines, "    end")
+        push!(lines, "")
+    end
+
+    # output capture and rd_o
+    push!(lines, "    // Output capture")
+    out_node = graph.nodes[out_id]
+    out_sig = if out_node.op == OP_ARG
+        port_names[findfirst(==(out_id), arg_ids)]
+    elseif out_node.op == OP_CONST
+        "$(W)'d$(out_node.const_val !== nothing ? out_node.const_val : 0)"
+    elseif out_id in analysis.live_across || out_node.op == OP_REG
+        state_ff_wire(out_id)
+    else
+        comb_wire(out_id)
+    end
+
+    push!(lines, "    always_ff @(posedge clk_i or negedge rst_ni) begin")
+    push!(lines, "        if (!rst_ni) rd_capture <= '0;")
+    push!(lines, "        else if (state == $(sbits)'(S_DONE)) rd_capture <= $(out_sig);")
+    push!(lines, "    end")
+    push!(lines, "")
+    push!(lines, "    assign rd_o   = rd_capture;")
+    push!(lines, "    assign done_o = (state == $(sbits)'(S_DONE));")
+    push!(lines, "")
+    push!(lines, "endmodule")
+
+    write(filepath, join(lines, "\n") * "\n")
+    println("Emitted (FSM): $filepath  ($(n_blocks) state(s))")
+end
+

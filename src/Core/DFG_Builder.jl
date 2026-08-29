@@ -2,6 +2,7 @@ module DFG_Builder
 
 export Opcode, OP_ARG, OP_CONST, OP_ADD, OP_SUB, OP_MUL, OP_RET
 export OP_SHR, OP_SHL, OP_AND, OP_OR, OP_XOR, OP_MOD, OP_MUX, OP_EQ, OP_NEQ, OP_LT, OP_LE, OP_GT, OP_GE, OP_LTU, OP_LEU, OP_GTU, OP_GEU, OP_PRIMITIVE
+export OP_REG  # Registered D flip-flop: clocked at state boundaries (FSM backend only)
 export DFGNode, HWGraph, OP_LATENCY
 
 @enum Opcode begin
@@ -29,11 +30,11 @@ export DFGNode, HWGraph, OP_LATENCY
     OP_GTU    # Greater than (unsigned)
     OP_GEU    # Greater than or equal (unsigned)
     OP_PRIMITIVE
+    OP_REG      # Registered D flip-flop: clocked at state boundaries (FSM backend only)
 end
 
 # Default cycle latency per opcode.
-# OP_ARG / OP_CONST / OP_RET have 0 latency — they don't consume compute cycles.
-# Multiply and divide-like ops default to multi-cycle.
+# OP_ARG / OP_CONST / OP_RET have 0 latencym no consumption compute cycles.
 const OP_LATENCY = Dict{Opcode,Int}(
     OP_ARG => 0,
     OP_CONST => 0,
@@ -58,6 +59,7 @@ const OP_LATENCY = Dict{Opcode,Int}(
     OP_LEU => 1,
     OP_GTU => 1,
     OP_GEU => 1,
+    OP_REG => 1,   # One-cycle registered capture
 )
 
 # A single node in the Data Flow Graph.

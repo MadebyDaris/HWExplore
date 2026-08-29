@@ -3,7 +3,7 @@
 # Walks IRTools SSA IR and constructs a NexusV Data-Flow Graph.
 # Because the IR is in SSA form, every SSA value maps to a physical wire.
 
-export translate_ir_to_dfg, FSMState, FSMGraph
+export translate_ir_to_dfg, FSMState, FSMGraph, analyse_fsm
 
 using IRTools: IRTools, IR, Block, Variable, Statement,
     blocks, arguments, branches, isreturn, xcall
@@ -18,6 +18,8 @@ Represents one basic block as a state in a hardware FSM.
 - `predecessors`:    block ids that can transition into this state
 - `true_successor`:  block id for the "then" branch (or unconditional target)
 - `false_successor`: block id for the "else" branch (nothing if unconditional)
+- `is_loop_header`:  true iff at least one predecessor is a back-edge (pred_id >= self)
+- `back_edge_preds`: subset of predecessors that are back-edges
 """
 mutable struct FSMState
     block_id::Int
@@ -25,17 +27,25 @@ mutable struct FSMState
     predecessors::Vector{Int}
     true_successor::Union{Nothing,Int}
     false_successor::Union{Nothing,Int}
+    is_loop_header::Bool
+    back_edge_preds::Vector{Int}
 end
+
+# Convenience constructor matching old 5-field call sites
+FSMState(bid, ec, preds, ts, fs) = FSMState(bid, ec, preds, ts, fs, false, Int[])
 
 """
     FSMGraph
 Collection of FSM states extracted from the IR's basic blocks.
+`node_state` maps every DFGNode id to the block_id of the state it was
+computed in.
 """
 struct FSMGraph
     states::Dict{Int,FSMState}       # block_id → FSMState
+    node_state::Dict{Int,Int}        # DFGNode id → block_id
 end
 
-FSMGraph() = FSMGraph(Dict{Int,FSMState}())
+FSMGraph() = FSMGraph(Dict{Int,FSMState}(), Dict{Int,Int}())
 
 # Operation Dispatch Table
 # Maps Julia intrinsic / Base function names to DFG opcodes.
@@ -284,6 +294,7 @@ function translate_ir_to_dfg(ir::IR, name::String; argtypes=nothing)
                 node = DFGNode(id, opcode, bw, input_ids, nothing, 0, 0, nothing, Dict{Symbol,Any}())
                 nodes[id] = node
                 ssa_map[var] = id
+                fsm.node_state[id] = blk_idx
 
             elseif _is_memory_op(callee)
                 # Memory access (getindex / setindex!)
@@ -315,6 +326,7 @@ function translate_ir_to_dfg(ir::IR, name::String; argtypes=nothing)
                 node = DFGNode(id, OP_PRIMITIVE, bw, input_ids, nothing, 0, 0, prim, params)
                 nodes[id] = node
                 ssa_map[var] = id
+                fsm.node_state[id] = blk_idx
             else
                 # Unknown / unsupported call
                 callee_sym = _callee_name(callee)
@@ -377,6 +389,7 @@ function translate_ir_to_dfg(ir::IR, name::String; argtypes=nothing)
                 node = DFGNode(id, OP_PRIMITIVE, 32, input_ids, nothing, 0, 1, :opaque, params)
                 nodes[id] = node
                 ssa_map[var] = id
+                fsm.node_state[id] = blk_idx
                 @warn "[IRTranslator] Unsupported call mapped to :opaque primitive" callee
             end
         end
@@ -393,6 +406,8 @@ function translate_ir_to_dfg(ir::IR, name::String; argtypes=nothing)
                         nothing, 0, 0, nothing, Dict{Symbol,Any}())
                     nodes[id] = node
                     push!(graph_outputs, id)
+                    # Map the return node to the block it was created in.   
+                    fsm.node_state[id] = blk_idx
                 end
             else
                 # GotoNode / GotoIfNot (conditional or unconditional branch)
@@ -435,9 +450,17 @@ function translate_ir_to_dfg(ir::IR, name::String; argtypes=nothing)
                 # Map branch arguments (PhiNode equivalent)
                 # In IRTools, phi-like behavior is encoded as branch arguments:
                 # br(target, val1, val2, ...) maps to the target block's arguments.
+                #
+                # We handle two structurally distinct cases:
+                #   (A) LOOP-HEADER PHI: the target is (or will become) a loop header
+                #       AND this predecessor is a back-edge (blk_idx >= target_id).
+                #       And emit an OP_REG node: inputs[1]=init_val, inputs[2]=update_val.
+                #   (B) NORMAL MERGE PHI: a forward-edge convergence point.
+                #       And promote to OP_MUX, or chain MUX nodes.
                 if !isempty(br.args) && haskey(fsm.states, target_id)
                     target_block = blks[target_id]
                     target_args = arguments(target_block)
+                    is_back_edge = (blk_idx >= target_id)
 
                     for (j, br_arg) in enumerate(br.args)
                         if j > length(target_args)
@@ -450,40 +473,89 @@ function translate_ir_to_dfg(ir::IR, name::String; argtypes=nothing)
                         end
 
                         if haskey(ssa_map, targ_var)
-                            # This target variable was already assigned by a
-                            # previous predecessor -> create a MUX node.
                             existing_id = ssa_map[targ_var]
                             existing_node = nodes[existing_id]
 
-                            if existing_node.op == OP_MUX
-                                # Already a MUX from another predecessor;
-                                # nested MUX chaining would be needed for >2
-                                # predecessors. For now, replace input[2].
-                                if length(existing_node.inputs) >= 2
+                            if is_back_edge
+                                # ── Case A: back-edge arriving at (potential) loop header ──
+                                # The existing_id is the init value (from the pre-loop
+                                # forward predecessor); dep_id is the loop-body update.
+                                # Promote to OP_REG if not already one; otherwise just
+                                # update inputs[2] (the update port).
+                                if existing_node.op == OP_REG
                                     existing_node.inputs[2] = dep_id
+                                else
+                                    bw = max(nodes[existing_id].bit_width,
+                                        haskey(nodes, dep_id) ? nodes[dep_id].bit_width : 32)
+                                    reg_id = new_id()
+                                    # inputs: [init_val, update_val]
+                                    reg_node = DFGNode(reg_id, OP_REG, bw,
+                                        [existing_id, dep_id],
+                                        nothing, 0, 1, nothing, Dict{Symbol,Any}())
+                                    nodes[reg_id] = reg_node
+                                    ssa_map[targ_var] = reg_id
+                                    fsm.node_state[reg_id] = target_id
+                                end
+                                # Mark the target as a loop header
+                                fsm.states[target_id].is_loop_header = true
+                                if blk_idx ∉ fsm.states[target_id].back_edge_preds
+                                    push!(fsm.states[target_id].back_edge_preds, blk_idx)
                                 end
                             else
-                                # First collision: promote to MUX
-                                mux_id = new_id()
-                                select_id = fsm.states[target_id].entry_cond
-                                if select_id === nothing
-                                    # No explicit condition use a dummy select
-                                    select_id = existing_id
+                                # ── Case B: normal forward-edge merge ──
+                                if existing_node.op == OP_MUX
+                                    # Already a MUX. Chain a new MUX rather than
+                                    # clobbering inputs[2] (fixes the >2-predecessor drop).
+                                    select_id = fsm.states[target_id].entry_cond
+                                    if select_id === nothing
+                                        select_id = existing_id
+                                    end
+                                    bw = max(existing_node.bit_width,
+                                        haskey(nodes, dep_id) ? nodes[dep_id].bit_width : 32)
+                                    chain_mux_id = new_id()
+                                    chain_mux = DFGNode(chain_mux_id, OP_MUX, bw,
+                                        [select_id, existing_id, dep_id],
+                                        nothing, 0, 0, nothing, Dict{Symbol,Any}())
+                                    nodes[chain_mux_id] = chain_mux
+                                    ssa_map[targ_var] = chain_mux_id
+                                    fsm.node_state[chain_mux_id] = target_id
+                                else
+                                    # First collision: promote to MUX
+                                    mux_id = new_id()
+                                    select_id = fsm.states[target_id].entry_cond
+                                    if select_id === nothing
+                                        select_id = existing_id
+                                    end
+                                    bw = max(nodes[existing_id].bit_width,
+                                        haskey(nodes, dep_id) ? nodes[dep_id].bit_width : 32)
+                                    mux_node = DFGNode(mux_id, OP_MUX, bw,
+                                        [select_id, existing_id, dep_id],
+                                        nothing, 0, 0, nothing, Dict{Symbol,Any}())
+                                    nodes[mux_id] = mux_node
+                                    ssa_map[targ_var] = mux_id
+                                    fsm.node_state[mux_id] = target_id
                                 end
-
-                                bw = max(nodes[existing_id].bit_width,
-                                    haskey(nodes, dep_id) ? nodes[dep_id].bit_width : 32)
-                                mux_node = DFGNode(mux_id, OP_MUX, bw,
-                                    [select_id, existing_id, dep_id],
-                                    nothing, 0, 0, nothing, Dict{Symbol,Any}())
-                                nodes[mux_id] = mux_node
-                                ssa_map[targ_var] = mux_id
                             end
                         else
                             # First assignment to this target variable
                             ssa_map[targ_var] = dep_id
                         end
                     end
+                end
+            end
+        end
+    end
+
+    # Post-walk back-edge detection pass
+    # A second pass to catch any back-edges we may have missed during the
+    # linear walk (e.g. the first time the target state was seen, its
+    # predecessors were not yet fully recorded).
+    for (bid, state) in fsm.states
+        for pred_id in state.predecessors
+            if pred_id >= bid
+                state.is_loop_header = true
+                if pred_id ∉ state.back_edge_preds
+                    push!(state.back_edge_preds, pred_id)
                 end
             end
         end

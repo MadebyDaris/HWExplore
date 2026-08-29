@@ -20,7 +20,7 @@ export register_unroll_hint!, get_unroll_hint, clear_unroll_hints!
 
 # DFG types
 export Opcode, OP_ARG, OP_CONST, OP_ADD, OP_SUB, OP_MUL, OP_RET
-export OP_SHR, OP_SHL, OP_AND, OP_OR, OP_XOR, OP_MOD, OP_MUX
+export OP_SHR, OP_SHL, OP_AND, OP_OR, OP_XOR, OP_MOD, OP_MUX, OP_REG
 export DFGNode, HWGraph, OP_LATENCY
 
 # IR Extraction & Translation (Phase 2 & 3)
@@ -30,7 +30,8 @@ export FSMState, FSMGraph
 # HW Generation
 export schedule_asap!, topological_sort, finish_cycle
 export schedule_list!, ResourceBudget
-export emit_verilog
+export FSMAnalysis, analyse_fsm
+export emit_verilog, emit_fsm_verilog
 export emit_dispatcher, DatapathEntry
 export PrimitiveSpec, PRIMITIVES, register_primitive!
 
@@ -52,6 +53,7 @@ include("Frontend/IRFrontend.jl")
 include("HWGen/PrimitiveLibrary.jl")
 include("HWGen/Scheduler.jl")
 include("HWGen/ResourceAllocator.jl")
+include("HWGen/FSMAnalysis.jl")
 include("HWGen/VerilogEmitter.jl")
 include("HWGen/DispatcherEmitter.jl")
 
