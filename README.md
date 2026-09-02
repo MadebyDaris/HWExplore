@@ -205,6 +205,119 @@ Nexus-V's long-term goal is to stop being "a generator for one X-HEEP SoC" and b
 7. Shell pipelining: accept a new instruction before the previous one finishes, using CV-X-IF's instruction `id` field for tagging.
 8. A PPA benchmarking harness: script Yosys/X-HEEP's existing synthesis flow, extract Fmax/area/LUT numbers automatically, and pair them with `mcycle` based software vs hardware cycle count comparisons.
 
+## Hardware Architecture and Wiring
+
+This section details how the different hardware components are connected and how they function together within the NexusV architecture.
+
+### Nexus Shell and X-Heep Integration
+The Nexus coprocessor shell (`cvxif_nexus_shell`) is integrated with the X-Heep MCU (`x_heep_system`) via the Core-V eXtension Interface (CV-X-IF) at the top-level module (`nexus_top.sv`). 
+
+The shell acts as a CV-X-IF slave, maintaining a 4-state FSM (`IDLE` → `WAIT_COMMIT` → `WAIT_DATAPATH` → `SEND_RESULT`):
+- **Issue Channel**: Receives the raw RISC-V instruction and source operands (`rs1`, `rs2`) via `ext_if.issue_req`. It accepts valid `CUSTOM_0` opcodes.
+- **Commit Channel**: Waits for the CPU (`ext_if.commit_valid`) to confirm the instruction is non-speculative before kicking off the datapath (`dp_start_o`).
+- **Result Channel**: Writes the computed data (`ext_if.result.data`) back to the destination register (`ext_if.result.rd`) and asserts `ext_if.result_valid`.
+- **Tie-offs**: Unused CV-X-IF features (compressed instructions and memory channels) are tied off to prevent pipeline hangs, with memory requests actively rejected via exceptions.
+
+#### Detailed CV-X-IF Wire Connections
+
+**1. Issue Channel**
+| Shell Port | Direction | Connects To (`ext_if` field) | Description |
+| :--- | :--- | :--- | :--- |
+| `x_issue_req_valid_i` | IN | `ext_if.issue_valid` | Valid issue request from MCU |
+| `x_issue_req_ready_o` | OUT | `ext_if.issue_ready` | Shell is ready to accept |
+| `x_issue_req_instr_i` | IN | `ext_if.issue_req.instr` | Raw 32-bit RISC-V instruction |
+| `x_issue_req_rs1_i` | IN | `ext_if.issue_req.rs[0]` | Source register 1 data |
+| `x_issue_req_rs2_i` | IN | `ext_if.issue_req.rs[1]` | Source register 2 data |
+| `x_issue_req_id_i` | IN | `ext_if.issue_req.id` | CPU-assigned instruction tag |
+| `x_issue_resp_accept_o`| OUT | `ext_if.issue_resp.accept` | High if shell accepts instruction (opcode `0x0B`) |
+
+**2. Commit Channel**
+| Shell Port | Direction | Connects To (`ext_if` field) | Description |
+| :--- | :--- | :--- | :--- |
+| `x_commit_valid_i` | IN | `ext_if.commit_valid` | Valid commit from MCU |
+| `x_commit_id_i` | IN | `ext_if.commit.id` | Instruction tag being committed |
+| `x_commit_kill_i` | IN | `ext_if.commit.commit_kill` | High if instruction is killed (e.g. branch mispredict) |
+
+**3. Result Channel**
+| Shell Port | Direction | Connects To (`ext_if` field) | Description |
+| :--- | :--- | :--- | :--- |
+| `x_result_valid_o` | OUT | `ext_if.result_valid` | Result is valid and ready |
+| `x_result_ready_i` | IN | `ext_if.result_ready` | CPU is ready to accept result |
+| `x_result_id_o` | OUT | `ext_if.result.id` | Tag of the completed instruction |
+| `x_result_data_o` | OUT | `ext_if.result.data` | 32-bit computed result data |
+| `x_result_rd_o` | OUT | `ext_if.result.rd` | Destination register address (`rd`) |
+
+### Dispatcher Mux (`nexus_mux`)
+The `nexus_mux` auto-generated module is the central router that dispatches commands to multiple parallel datapaths.
+- **Decoding**: Uses the instruction's `funct3` field to one-hot start the corresponding stateless or stateful datapath.
+- **Stateful Commands**: For commands mapped to `funct3` 0–2, the mux acts as a controller for memory-backed algorithms (like `nexus_mont_adapter`). It decodes `CMD_WRITE_ADDR`, `CMD_WRITE_DATA`, and `CMD_START` to latch configuration registers and pulse internal write/start signals.
+- **Dispatch Latch**: Tracks the busy datapath using a `selected_q` latch and an `inflight_q` flag, ensuring responses (`rd_o`, `done_o`) are routed back correctly to the shell.
+
+#### Detailed Mux Wire Connections
+
+**Shell Interface (Upstream)**
+| Port | Direction | Description |
+| :--- | :--- | :--- |
+| `start_i` | IN | Start execution signal from shell |
+| `stall_i` | IN | Stall pipeline (if supported) |
+| `funct3_i` | IN | 3-bit command encoding to select datapath |
+| `rs1_i`, `rs2_i` | IN | 32-bit source operands |
+| `rd_o` | OUT | 32-bit result returned to shell |
+| `done_o` | OUT | Signal indicating datapath completion |
+
+**Scratchpad Interface (Downstream)**
+| Port | Direction | Connects to `nexus_scratchpad` | Description |
+| :--- | :--- | :--- | :--- |
+| `sp_addr_o` | OUT | `b_addr_i` | Stateful datapath memory address |
+| `sp_wdata_o` | OUT | `b_wdata_i` | Stateful datapath write data |
+| `sp_we_o` | OUT | `b_we_i` | Stateful datapath write enable |
+| `sp_rdata_i` | IN | `b_rdata_o` | Stateful datapath read data |
+
+### Scratchpad SRAM (`nexus_scratchpad`)
+The `nexus_scratchpad` provides a dual-port SRAM (default 256 words), primarily used for accelerators requiring local, address-indexed state beyond standard registers.
+- **Port A**: Designed for AXI-Lite master (CPU) access to write configurations and initial arrays.
+- **Port B**: Dedicated to the stateful datapath (e.g., `nexus_mont_adapter`) to read and write intermediate algorithm data locally without tying up the main CV-X-IF memory channel.
+- Both ports support independent, synchronous read and write operations.
+
+#### Detailed Scratchpad Wire Connections
+
+**Port A (AXI-Lite Master / CPU)**
+| Port | Direction | Description |
+| :--- | :--- | :--- |
+| `a_addr_i` | IN | Address for CPU read/write operations |
+| `a_we_i` | IN | Write enable flag |
+| `a_wdata_i` | IN | Data to write to memory |
+| `a_rdata_o` | OUT | Data read from memory |
+
+**Port B (Stateful Datapath)**
+| Port | Direction | Description |
+| :--- | :--- | :--- |
+| `b_addr_i` | IN | Address requested by `nexus_mux` / algorithm |
+| `b_we_i` | IN | Write enable flag |
+| `b_wdata_i` | IN | Data to write to memory |
+| `b_rdata_o` | OUT | Data read from memory |
+
+### Skid Buffer (`nexus_skid_buffer`)
+A parameterizable FIFO (`BUFFER_DEPTH = 4`) that handles backpressure and decouples pipeline stalls.
+- **Interfaces**: Uses a standard valid/ready handshake on both the upstream slave (`s_valid`, `s_ready`) and downstream master (`m_valid`, `m_ready`).
+- **Mechanism**: Maintains a circular buffer with `head`, `tail`, and `count` pointers. It accepts data as long as `count < BUFFER_DEPTH` and outputs data if `count > 0`, safely buffering inflight transactions when downstream is stalled.
+
+#### Detailed Skid Buffer Wire Connections
+
+**Slave Interface (Upstream Input)**
+| Port | Direction | Description |
+| :--- | :--- | :--- |
+| `s_valid` | IN | Valid data incoming |
+| `s_ready` | OUT | Buffer has space (`count < BUFFER_DEPTH`) |
+| `s_data` | IN | `DATA_WIDTH` bits of incoming data |
+
+**Master Interface (Downstream Output)**
+| Port | Direction | Description |
+| :--- | :--- | :--- |
+| `m_valid` | OUT | Buffer has data (`count > 0`) |
+| `m_ready` | IN | Downstream component is ready to accept |
+| `m_data` | OUT | Data from the head of the circular buffer |
+
 ## Documentation
 
 - [Architecture and Internals](docs/Architecture_and_Internals.md)  Shell, datapaths, CV-X-IF protocol overview, and project pipeline
