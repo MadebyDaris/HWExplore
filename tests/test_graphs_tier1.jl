@@ -8,7 +8,7 @@ Graph 1: Horner's method — ((a3*x + a2)*x + a1)*x + a0
 Graph 2: CRC step — shift + conditional XOR
 """
 
-using NexusV
+using HWExplore
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Graph 1: Horner's method
@@ -46,7 +46,7 @@ end
 @assert horner.latency == 10                     "Total latency"
 println("Horner: PASS  (latency=$(horner.latency))")
 
-out_sv = joinpath(@__DIR__, "..", "hw", "rtl", "horner_poly.sv")
+out_sv = joinpath(@__DIR__, "..", "hw", "rtl", "generated", "horner_poly.sv")
 emit_verilog(horner, out_sv)
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -84,7 +84,7 @@ end
 @assert crc.latency == 4                    "Total latency"
 println("CRC step: PASS  (latency=$(crc.latency))")
 
-out_sv = joinpath(@__DIR__, "..", "hw", "rtl", "crc_step.sv")
+out_sv = joinpath(@__DIR__, "..", "hw", "rtl", "generated", "crc_step.sv")
 emit_verilog(crc, out_sv)
 
 println("\n=== All Tier 1 graphs: PASS ===")

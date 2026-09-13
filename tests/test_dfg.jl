@@ -13,7 +13,7 @@ Graph: mac_plus_5  =>  (rs1 * rs2) + 5
 Expected latency: 4 (MUL takes 2 cycles)
 """
 
-using NexusV
+using HWExplore
 
 # Build — latency 0 means "use OP_LATENCY default"
 node_1 = DFGNode(1, OP_ARG,   32, [],    nothing, 0, 0, nothing, Dict())
@@ -49,7 +49,7 @@ end
 println("Scheduling: PASS  (latency=$(graph.latency))")
 
 # Emit SystemVerilog
-out_sv = joinpath(@__DIR__, "..", "hw", "rtl", "mac_plus_5.sv")
+out_sv = joinpath(@__DIR__, "..", "hw", "rtl", "generated", "mac_plus_5.sv")
 emit_verilog(graph, out_sv)
 
 sv_text = read(out_sv, String)

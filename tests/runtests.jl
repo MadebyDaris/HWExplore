@@ -1,10 +1,10 @@
 # tests/runtests.jl
-# Julia automated test suite for NexusV — run with: julia --project=. tests/runtests.jl
+# Julia automated test suite for HWExplore — run with: julia --project=. tests/runtests.jl
 
 using Test
-using NexusV
+using HWExplore
 
-@testset "NexusV — DFG Types & Scheduler" begin
+@testset "HWExplore — DFG Types & Scheduler" begin
 
     @testset "Opcode enum" begin
         @test OP_ARG   == OP_ARG
@@ -49,7 +49,7 @@ using NexusV
     end
 end
 
-@testset "NexusV — Scheduling" begin
+@testset "HWExplore — Scheduling" begin
     nodes = Dict(
         1 => DFGNode(1, OP_ARG,   32, [],    nothing, 0, 0, nothing, Dict()),
         2 => DFGNode(2, OP_ARG,   32, [],    nothing, 0, 0, nothing, Dict()),
@@ -104,7 +104,7 @@ end
     end
 end
 
-@testset "NexusV — Verilog Emission" begin
+@testset "HWExplore — Verilog Emission" begin
     nodes = Dict(
         1 => DFGNode(1, OP_ARG,   32, [],    nothing, 0, 0, nothing, Dict()),
         2 => DFGNode(2, OP_ARG,   32, [],    nothing, 0, 0, nothing, Dict()),
@@ -151,17 +151,17 @@ end
     end
 end
 
-@testset "NexusV — Dispatcher" begin
+@testset "HWExplore — Dispatcher" begin
     @testset "emit_dispatcher — generates valid SV" begin
         entries = [
             DatapathEntry("mac_plus_5", 0, 4, false, "mac_plus_5.sv"),
             DatapathEntry("crc_step",   1, 4, false, "crc_step.sv"),
         ]
         tmp = mktempdir()
-        out = joinpath(tmp, "nexus_mux.sv")
+        out = joinpath(tmp, "hwx_mux.sv")
         emit_dispatcher(entries, out)
         sv = read(out, String)
-        @test occursin("module nexus_mux", sv)
+        @test occursin("module hwx_mux", sv)
         @test occursin("funct3_i", sv)
         @test occursin("start_0", sv)
         @test occursin("start_1", sv)
@@ -179,7 +179,7 @@ end
     end
 end
 
-@testset "NexusV — PrimitiveLibrary" begin
+@testset "HWExplore — PrimitiveLibrary" begin
     @testset "Built-in primitives registered" begin
         @test haskey(PRIMITIVES, :simd_mac)
         @test haskey(PRIMITIVES, :barrett_reduction)
@@ -200,4 +200,4 @@ end
     end
 end
 
-println("\n=== All NexusV tests passed! ===")
+println("\n=== All HWExplore tests passed! ===")

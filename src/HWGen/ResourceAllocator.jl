@@ -1,6 +1,6 @@
 # ResourceAllocator.jl
 #
-# Resource-constrained list scheduling for NexusV dataflow graphs.
+# Resource-constrained list scheduling for HWExplore dataflow graphs.
 # Given a resource budget (e.g. "1 multiplier, 2 ALUs"), this module
 # serializes operations that would otherwise oversubscribe shared hardware.
 # Depends on DFG_Builder types and Scheduler (finish_cycle, topological_sort).

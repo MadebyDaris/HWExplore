@@ -9,13 +9,13 @@
 // For N=997, R=1024: computes (a*b*R^-1) mod N.
 #include <iostream>
 #include <verilated.h>
-#include "Vnexus_mont_adapter.h"
+#include "Vhwx_mont_adapter.h"
 
 static int failures = 0;
 
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
-    Vnexus_mont_adapter* dut = new Vnexus_mont_adapter;
+    Vhwx_mont_adapter* dut = new Vhwx_mont_adapter;
 
     dut->rst_ni = 0;
     dut->clk_i = 0; dut->eval();
@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
 
     std::cout << "Montgomery adapter stateful tests (N=997, R=1024):" << std::endl;
 
-    // ── Test 1: legacy mode — start loads A[0]=5, B[0]=7 ─────────────────
+    // Test 1: legacy mode — start loads A[0]=5, B[0]=7
     dut->rs1_i = 5;
     dut->rs2_i = 7;
     dut->addr_i = 0;
@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
         failures++;
     }
 
-    // ── Test 2: stateful write via we_i/addr_i ───────────────────────────
+    // Test 2: stateful write via we_i/addr_i
     dut->rst_ni = 0;
     dut->clk_i = 0; dut->eval();
     dut->clk_i = 1; dut->eval();

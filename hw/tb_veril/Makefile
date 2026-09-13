@@ -22,29 +22,29 @@ INCDIRS = -I$(XHEEP)/hw/core-v-mini-mcu/include \
 VFLAGS = --cc --exe --build -Wno-fatal -Wno-DECLFILENAME -Wno-EOFNEWLINE $(INCDIRS) --trace
 
 # ── Individual Unit Tests ──
-test_saturating: tb_saturating.cpp $(PRIMITIVES)/nexus_saturating_add.sv
-	$(VERILATOR) $(VFLAGS) --top-module nexus_saturating_add $^
-	./obj_dir/Vnexus_saturating_add
+test_saturating: tb_saturating.cpp $(PRIMITIVES)/hwx_saturating_add.sv
+	$(VERILATOR) $(VFLAGS) --top-module hwx_saturating_add $^
+	./obj_dir/Vhwx_saturating_add
 
-test_simd_mac: tb_simd_mac.cpp $(PRIMITIVES)/nexus_simd_mac.sv
-	$(VERILATOR) $(VFLAGS) --top-module nexus_simd_mac $^
-	./obj_dir/Vnexus_simd_mac
+test_simd_mac: tb_simd_mac.cpp $(PRIMITIVES)/hwx_simd_mac.sv
+	$(VERILATOR) $(VFLAGS) --top-module hwx_simd_mac $^
+	./obj_dir/Vhwx_simd_mac
 
-test_barrett: tb_barrett.cpp $(PRIMITIVES)/nexus_barrett_reduction.sv
-	$(VERILATOR) $(VFLAGS) --top-module nexus_barrett_reduction $^
-	./obj_dir/Vnexus_barrett_reduction
+test_barrett: tb_barrett.cpp $(PRIMITIVES)/hwx_barrett_reduction.sv
+	$(VERILATOR) $(VFLAGS) --top-module hwx_barrett_reduction $^
+	./obj_dir/Vhwx_barrett_reduction
 
-test_mont_stateful: tb_mont_stateful.cpp $(PRIMITIVES)/nexus_mont_adapter.sv $(PRIMITIVES)/nexus_mont_multiplier.sv
-	$(VERILATOR) $(VFLAGS) --top-module nexus_mont_adapter $^
-	./obj_dir/Vnexus_mont_adapter
+test_mont_stateful: tb_mont_stateful.cpp $(PRIMITIVES)/hwx_mont_adapter.sv $(PRIMITIVES)/hwx_mont_multiplier.sv
+	$(VERILATOR) $(VFLAGS) --top-module hwx_mont_adapter $^
+	./obj_dir/Vhwx_mont_adapter
 
-test_mux_all: tb_mux_all.cpp $(RTL)/nexus_mux.sv $(RTL)/mac_plus_5.sv $(RTL)/crc_step.sv $(PRIMITIVES)/nexus_simd_mac.sv $(PRIMITIVES)/nexus_saturating_add.sv $(PRIMITIVES)/nexus_barrett_reduction.sv $(PRIMITIVES)/nexus_mont_adapter.sv $(PRIMITIVES)/nexus_mont_multiplier.sv
-	$(VERILATOR) $(VFLAGS) --top-module nexus_mux $^
-	./obj_dir/Vnexus_mux
+test_mux_all: tb_mux_all.cpp $(RTL)/hwx_mux.sv $(RTL)/generated/mac_plus_5.sv $(RTL)/generated/crc_step.sv $(PRIMITIVES)/hwx_simd_mac.sv $(PRIMITIVES)/hwx_saturating_add.sv $(PRIMITIVES)/hwx_barrett_reduction.sv $(PRIMITIVES)/hwx_mont_adapter.sv $(PRIMITIVES)/hwx_mont_multiplier.sv
+	$(VERILATOR) $(VFLAGS) --top-module hwx_mux $^
+	./obj_dir/Vhwx_mux
 
-test_cvxif: tb_cvxif.cpp $(RTL)/cvxif_nexus_shell.sv $(XHEEP)/hw/vendor/openhwgroup/cv32e40x/rtl/include/cv32e40x_pkg.sv
-	$(VERILATOR) $(VFLAGS) --top-module cvxif_nexus_shell $^
-	./obj_dir/Vcvxif_nexus_shell
+test_cvxif: tb_cvxif.cpp $(RTL)/cvxif_hwx_shell.sv $(XHEEP)/hw/vendor/openhwgroup/cv32e40x/rtl/include/cv32e40x_pkg.sv
+	$(VERILATOR) $(VFLAGS) --top-module cvxif_hwx_shell $^
+	./obj_dir/Vcvxif_hwx_shell
 
 test_all: test_saturating test_simd_mac test_barrett test_mont_stateful test_mux_all test_cvxif
 

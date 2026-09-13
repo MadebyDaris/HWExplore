@@ -8,7 +8,7 @@
 #
 
 using Test
-using NexusV
+using HWExplore
 
 function fsm_acc(a::Int32, n::Int32)
     acc = Int32(0)
@@ -38,7 +38,7 @@ function fsm_3way(a::Int32, b::Int32, c::Int32)
     end
 end
 
-@testset "NexusV — FSM Sequential Backend" begin
+@testset "HWExplore — FSM Sequential Backend" begin
     @testset "Back-edge detection — simple accumulator loop" begin
         _, fsm = extract_and_translate(fsm_acc, Tuple{Int32,Int32}; name="fsm_acc_be")
 

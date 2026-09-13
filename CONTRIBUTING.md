@@ -1,6 +1,6 @@
-# Contributing to NexusV
+# Contributing to HWExplore
 
-Thank you for your interest in contributing to NexusV! This document provides guidelines and workflows for contributing to the repository.
+Thank you for your interest in contributing to HWExplore! This document provides guidelines and workflows for contributing to the repository.
 
 ## Getting Started
 
@@ -18,7 +18,7 @@ Ensure that the X-HEEP submodule is fully initialized if you plan to work on sys
 A typical developer workflow for adding a new feature or operation looks like this:
 
 1. **Define the Graph/Operation:** Update the graph model in `src/Core/DFG_Builder.jl` and add the operation's latency/translation logic in `src/Frontend/IRTranslator.jl`.
-2. **Schedule & Emit:** Ensure the scheduler (`hw/src_hw/Scheduler.jl`) correctly schedules the new operations and the emitter (`hw/src_hw/VerilogEmitter.jl`) correctly translates them to SystemVerilog.
+2. **Schedule & Emit:** Ensure the scheduler (`src/HWGen/Scheduler.jl`) correctly schedules the new operations and the emitter (`src/HWGen/VerilogEmitter.jl`) correctly translates them to SystemVerilog.
 3. **Simulate (Datapath Level):** Compile the generated Verilog using Verilator and test i`t using a standalone C++ testbench (e.g. `hw/tb_veril/tb_generated.cpp`).
 4. **Integration (Optional):** Test the generated datapath with the CV-X-IF shell or a full X-HEEP integration.
 

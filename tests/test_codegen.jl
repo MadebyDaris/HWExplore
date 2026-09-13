@@ -1,4 +1,4 @@
-using NexusV
+using HWExplore
 
 println("=========================================")
 println("=== 1. Simple Arithmetic (MAC)      ===")
@@ -53,15 +53,15 @@ mod_tuple = get_llvm_module(ex_tuple, NTuple{4, Int32}, NTuple{4, Int32})
 println(string(mod_tuple))
 
 println("\n=========================================")
-println("=== 5. NexusV Unrolled Loop         ===")
+println("=== 5. HWExplore Unrolled Loop         ===")
 println("=========================================")
 function ex_unroll(a::Int32, b::Int32, c::Int32)
     result = Int32(0)
-    NexusV.@nexus_unroll factor=4 for i in 1:16
+    HWExplore.@nexus_unroll factor=4 for i in 1:16
         result += a * b + c
     end
     return result
 end
 mod_unroll = get_llvm_module(ex_unroll, Int32, Int32, Int32)
-NexusV.apply_unroll_pass(mod_unroll; factor = 4)
+HWExplore.apply_unroll_pass(mod_unroll; factor = 4)
 println(string(mod_unroll))

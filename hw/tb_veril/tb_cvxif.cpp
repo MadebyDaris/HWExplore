@@ -1,11 +1,11 @@
 // tb_cvxif.cpp
 //
-// Verilator testbench for cvxif_nexus_shell.
+// Verilator testbench for cvxif_hwx_shell.
 // Tests: issue -> commit -> result handshake.
 // The shell now instantiates mac_plus_5: (rs1 * rs2) + 5, 4-cycle latency.
 //   rs1=10, rs2=20 => expected result = (10*20)+5 = 205
 
-#include "Vcvxif_nexus_shell.h"
+#include "Vcvxif_hwx_shell.h"
 #include "verilated.h"
 #include <iostream>
 #include <cassert>
@@ -18,7 +18,7 @@ double sc_time_stamp() { return sim_time; } // Called by $time in Verilog
 static int dp_timer = 0;
 static bool dp_running = false;
 
-static void tick(Vcvxif_nexus_shell* dut) {
+static void tick(Vcvxif_hwx_shell* dut) {
     dut->clk_i = 0; 
     dut->eval(); 
     sim_time++;
@@ -47,7 +47,7 @@ static void tick(Vcvxif_nexus_shell* dut) {
 
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
-    Vcvxif_nexus_shell* dut = new Vcvxif_nexus_shell;
+    Vcvxif_hwx_shell* dut = new Vcvxif_hwx_shell;
 
     bool test_pass = true;
 

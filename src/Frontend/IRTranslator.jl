@@ -1,6 +1,6 @@
 # IRTranslator.jl
 #
-# Walks IRTools SSA IR and constructs a NexusV Data-Flow Graph.
+# Walks IRTools SSA IR and constructs a HWExplore Data-Flow Graph.
 # Because the IR is in SSA form, every SSA value maps to a physical wire.
 
 export translate_ir_to_dfg, FSMState, FSMGraph, analyse_fsm
@@ -129,7 +129,7 @@ end
 # Core IRTranslator
 """
     translate_ir_to_dfg(ir::IR, name::String; argtypes=nothing) → (HWGraph, FSMGraph)
-Walk an IRTools `IR` object and construct a NexusV Data-Flow Graph.
+Walk an IRTools `IR` object and construct a HWExplore Data-Flow Graph.
 # Arguments
 - `ir`:       IRTools IR (from `IRTools.@code_ir` or `IRTools.IR(...)`)
 - `name`:     Name for the generated hardware module
@@ -477,7 +477,7 @@ function translate_ir_to_dfg(ir::IR, name::String; argtypes=nothing)
                             existing_node = nodes[existing_id]
 
                             if is_back_edge
-                                # ── Case A: back-edge arriving at (potential) loop header ──
+                                # Case A: back-edge arriving at (potential) loop header
                                 # The existing_id is the init value (from the pre-loop
                                 # forward predecessor); dep_id is the loop-body update.
                                 # Promote to OP_REG if not already one; otherwise just
@@ -502,7 +502,7 @@ function translate_ir_to_dfg(ir::IR, name::String; argtypes=nothing)
                                     push!(fsm.states[target_id].back_edge_preds, blk_idx)
                                 end
                             else
-                                # ── Case B: normal forward-edge merge ──
+                                # Case B: normal forward-edge merge
                                 if existing_node.op == OP_MUX
                                     # Already a MUX. Chain a new MUX rather than
                                     # clobbering inputs[2] (fixes the >2-predecessor drop).

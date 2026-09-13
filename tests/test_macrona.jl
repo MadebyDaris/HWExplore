@@ -1,6 +1,6 @@
 using Test
 using MacroTools
-using NexusV
+using HWExplore
 
 # 1. Define test functions at the global file scope
 @nexus_accelerate function mac_elemental(a::Int8, b::Int8)
@@ -16,7 +16,7 @@ end
 end
 
 # 2. Run the tests inside @testset
-@testset "Nexus Phase 1: Macro Interception Tests" begin
+@testset "HWExplore Phase 1: Macro Interception Tests" begin
 
     @testset "ML Workload (Int8 Types)" begin
         res = mac_elemental(Int8(2), Int8(4))

@@ -1,7 +1,7 @@
 // tb_generated.cpp
 //
-// Verilator testbench for a generated NexusV datapath module.
-// Tests the standard Nexus port interface:
+// Verilator testbench for a generated HWExplore datapath module.
+// Tests the standard HWExplore port interface:
 //   clk_i, rst_ni, start_i, rs1_i, rs2_i, rd_o, done_o
 //
 // Expected DUT: mac_plus_5  ->  result = (rs1 * rs2) + 5

@@ -1,4 +1,4 @@
-# NexusV Usage and Examples
+# HWExplore Usage and Examples
 
 This guide documents the hardware generation flow: defining a computation in Julia, generating pipelined RTL, and simulating it with Verilator.
 
@@ -55,21 +55,21 @@ The sample graph in `tests/test_dfg.jl` or `examples/run_pipeline.jl` computes:
 Run the end-to-end Julia script (this also emits RTL):
 
 ```bash
-cd /path/to/NexusV
+cd /path/to/HWExplore
 julia --project=. examples/run_pipeline.jl
 ```
 
 Expected output includes:
-- `[NexusV] Synthesized 'mac_plus_5'`
-- `Emitting Verilog to .../hw/rtl/mac_plus_5.sv`
+- `[HWExplore] Synthesized 'mac_plus_5'`
+- `Emitting Verilog to .../hw/rtl/generated/mac_plus_5.sv`
 
 ### Step B: Compile generated RTL with Verilator (datapath TB)
 
 Build and link the datapath testbench:
 
 ```bash
-cd /path/to/NexusV/hw/tb_veril
-verilator --cc ../rtl/mac_plus_5.sv \
+cd /path/to/HWExplore/hw/tb_veril
+verilator --cc ../rtl/generated/mac_plus_5.sv \
   --exe tb_generated.cpp \
   --top-module mac_plus_5
 make -C obj_dir -f Vmac_plus_5.mk Vmac_plus_5
@@ -91,14 +91,14 @@ Expected output:
 For shell-level testing (integration with the CV-X-IF protocol), use a fresh output directory (`--Mdir`) to avoid stale artifacts:
 
 ```bash
-cd /path/to/NexusV/hw/rtl
-verilator --cc cvxif_nexus_shell.sv mac_plus_5.sv \
+cd /path/to/HWExplore/hw/rtl
+verilator --cc cvxif_hwx_shell.sv generated/mac_plus_5.sv \
   --exe tb_cvxif.cpp \
-  --top-module cvxif_nexus_shell \
+  --top-module cvxif_hwx_shell \
   --Mdir obj_dir_local \
   -I../ext_xheep/hw/vendor/openhwgroup/cv32e40x/rtl/include
-make -C obj_dir_local -f Vcvxif_nexus_shell.mk Vcvxif_nexus_shell
-./obj_dir_local/Vcvxif_nexus_shell
+make -C obj_dir_local -f Vcvxif_hwx_shell.mk Vcvxif_hwx_shell
+./obj_dir_local/Vcvxif_hwx_shell
 ```
 
 Expected output ends with:
@@ -111,8 +111,8 @@ Expected output ends with:
 1. Rebuild with tracing enabled:
 
 ```bash
-cd /path/to/NexusV/hw/tb_veril
-verilator --cc ../rtl/mac_plus_5.sv \
+cd /path/to/HWExplore/hw/tb_veril
+verilator --cc ../rtl/generated/mac_plus_5.sv \
   --exe tb_generated.cpp \
   --top-module mac_plus_5 \
   --trace --Mdir obj_dir_trace

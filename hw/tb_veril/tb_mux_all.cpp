@@ -6,12 +6,12 @@
 //   2 CMD_START        (stateful)
 //   3 mac_plus_5       (stateless)
 //   4 crc_step         (stateless)
-//   5 nexus_simd_mac   (stateless)
-//   6 nexus_saturating_add (stateless)
-//   7 nexus_barrett_reduction (stateless)
+//   5 hwx_simd_mac   (stateless)
+//   6 hwx_saturating_add (stateless)
+//   7 hwx_barrett_reduction (stateless)
 #include <iostream>
 #include <verilated.h>
-#include "Vnexus_mux.h"
+#include "Vhwx_mux.h"
 
 static int failures = 0;
 static void check(const char* name, uint32_t got, uint32_t expected) {
@@ -20,7 +20,7 @@ static void check(const char* name, uint32_t got, uint32_t expected) {
 }
 
 // Drive one stateless instruction through the mux
-static uint32_t run_stateless(Vnexus_mux* dut, int funct3, uint32_t rs1, uint32_t rs2) {
+static uint32_t run_stateless(Vhwx_mux* dut, int funct3, uint32_t rs1, uint32_t rs2) {
     dut->funct3_i = funct3;
     dut->rs1_i = rs1;
     dut->rs2_i = rs2;
@@ -40,7 +40,7 @@ static uint32_t run_stateless(Vnexus_mux* dut, int funct3, uint32_t rs1, uint32_
 
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
-    Vnexus_mux* dut = new Vnexus_mux;
+    Vhwx_mux* dut = new Vhwx_mux;
 
     dut->rst_ni = 0;
     dut->clk_i = 0; dut->eval();

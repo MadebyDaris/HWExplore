@@ -1,7 +1,7 @@
 // tb_barrett.cpp — standalone Barrett reduction test
 #include <iostream>
 #include <verilated.h>
-#include "Vnexus_barrett_reduction.h"
+#include "Vhwx_barrett_reduction.h"
 
 static int failures = 0;
 
@@ -14,7 +14,7 @@ static void check(const char* name, uint32_t got, uint32_t expected) {
     }
 }
 
-static void run_one(Vnexus_barrett_reduction* dut, uint32_t x, uint32_t expected) {
+static void run_one(Vhwx_barrett_reduction* dut, uint32_t x, uint32_t expected) {
     dut->rs1_i = x;
     dut->rs2_i = 0;
     dut->start_i = 1;
@@ -36,7 +36,7 @@ static void run_one(Vnexus_barrett_reduction* dut, uint32_t x, uint32_t expected
 
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
-    Vnexus_barrett_reduction* dut = new Vnexus_barrett_reduction;
+    Vhwx_barrett_reduction* dut = new Vhwx_barrett_reduction;
 
     dut->rst_ni = 0;
     dut->clk_i = 0; dut->eval();

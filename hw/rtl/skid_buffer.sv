@@ -1,4 +1,4 @@
-module nexus_skid_buffer #(
+module hwx_skid_buffer #(
     parameter int DATA_WIDTH = 32,
     parameter int BUFFER_DEPTH = 4
 ) (

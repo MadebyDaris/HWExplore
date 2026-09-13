@@ -33,6 +33,9 @@
 *.swo
 *~
 
+# Scratch/debug output dropped by ad-hoc Verilator/gen_vc.py runs
+hw/tb_veril/*.txt
+
 # Julia / Python / editor caches
 __pycache__/
 *.py[cod]

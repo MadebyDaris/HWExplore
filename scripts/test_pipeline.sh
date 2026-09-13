@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 echo "=========================================="
-echo "      NexusV Testing Pipeline             "
+echo "      HWExplore Testing Pipeline             "
 echo "=========================================="
 
-echo "[1/4] Building SW Tests..."
-make -C sw/tests clean all
+echo "[1/4] Building SW Tests (X-HEEP platform)..."
+make -C sw/platforms/xheep/tests clean all
 echo "SW Build OK."
 
 echo ""
@@ -15,13 +15,13 @@ make -C hw/tb_veril clean test_all
 echo "HW Unit Tests OK."
 
 echo ""
-echo "[3/4] Building System Simulation (tb_nexus_system)..."
-bash hw/tb_veril/build_nexus_sim.sh
+echo "[3/4] Building System Simulation (tb_hwx_system)..."
+bash sw/platforms/xheep/sim/build_hwx_sim.sh
 echo "System Simulation Build OK."
 
 echo ""
 echo "[4/4] Running System Simulation (End-to-End)..."
-./hw/tb_veril/obj_dir/Vtb_nexus_system +firmware=sw/tests/smoke_test/main.hex
+./sw/platforms/xheep/sim/obj_dir/Vtb_hwx_system +firmware=sw/platforms/xheep/tests/smoke_test/main.hex
 echo "System Simulation OK."
 
 echo "=========================================="

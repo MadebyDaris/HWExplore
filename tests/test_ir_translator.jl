@@ -3,10 +3,10 @@
 # Run with: julia --project=. tests/test_ir_translator.jl
 
 using Test
-using NexusV
+using HWExplore
 using IRTools: IRTools
 
-@testset "NexusV — Phase 2 & 3: IR Extraction + DFG Translation" begin
+@testset "HWExplore — Phase 2 & 3: IR Extraction + DFG Translation" begin
 
     @testset "extract_ir — basic IR extraction" begin
         # Simple arithmetic function using intrinsics

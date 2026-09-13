@@ -1,7 +1,7 @@
 // tb_simd_mac.cpp — standalone SIMD MAC test (4 lanes, 8-bit signed)
 #include <iostream>
 #include <verilated.h>
-#include "Vnexus_simd_mac.h"
+#include "Vhwx_simd_mac.h"
 
 static int failures = 0;
 static void check(const char* name, uint32_t got, uint32_t expected) {
@@ -15,7 +15,7 @@ static uint32_t pack(int a, int b, int c, int d) {
            ((uint32_t)(uint8_t)c << 16) | ((uint32_t)(uint8_t)d << 24);
 }
 
-static void run_one(Vnexus_simd_mac* dut, uint32_t rs1, uint32_t rs2, uint32_t expected) {
+static void run_one(Vhwx_simd_mac* dut, uint32_t rs1, uint32_t rs2, uint32_t expected) {
     dut->rs1_i = rs1;
     dut->rs2_i = rs2;
     dut->start_i = 1;
@@ -34,7 +34,7 @@ static void run_one(Vnexus_simd_mac* dut, uint32_t rs1, uint32_t rs2, uint32_t e
 
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
-    Vnexus_simd_mac* dut = new Vnexus_simd_mac;
+    Vhwx_simd_mac* dut = new Vhwx_simd_mac;
 
     dut->rst_ni = 0;
     dut->clk_i = 0; dut->eval();

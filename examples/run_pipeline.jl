@@ -1,4 +1,4 @@
-using NexusV
+using HWExplore
 
 # Define the function
 f(a::Int32, b::Int32) = Base.add_int(Base.mul_int(a, b), Int32(5))
@@ -20,7 +20,7 @@ println("Scheduling ASAP...")
 schedule_asap!(graph)
 
 # Emit Verilog
-filepath = joinpath(@__DIR__, "hw", "rtl", "f_1.sv")
+filepath = joinpath(@__DIR__, "..", "hw", "rtl", "generated", "f_1.sv")
 println("Emitting Verilog to $filepath...")
 emit_verilog(graph, filepath)
 

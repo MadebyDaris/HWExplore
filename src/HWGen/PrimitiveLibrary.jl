@@ -1,13 +1,13 @@
 # PrimitiveLibrary.jl
-# Included directly into NexusV module - no submodule wrapper.
+# Included directly into HWExplore module - no submodule wrapper.
 
 export PrimitiveSpec, PRIMITIVES, register_primitive!
 
 # Metadata for one hardware primitive in the registry.
 #
 # - name:             Symbol key, e.g. :simd_mac
-# - module_name:      Verilog top-level module, e.g. "nexus_simd_mac"
-# - file_path:        relative to hw/rtl/, e.g. "primitives/nexus_simd_mac.sv"
+# - module_name:      Verilog top-level module, e.g. "hwx_simd_mac"
+# - file_path:        relative to hw/rtl/, e.g. "primitives/hwx_simd_mac.sv"
 # - latency:          pipeline depth in cycles (nominal)
 # - variable_latency: true if actual latency is data-dependent (e.g. iterative FSM)
 # - params:           default parameter overrides, e.g. Dict(:LANES => 4, :DATA_WIDTH => 8)
@@ -32,32 +32,32 @@ end
 
 register_primitive!(PrimitiveSpec(
     :simd_mac,
-    "nexus_simd_mac",
-    "primitives/nexus_simd_mac.sv",
+    "hwx_simd_mac",
+    "primitives/hwx_simd_mac.sv",
     3, false,
     Dict(:LANES => 4, :DATA_WIDTH => 8)
 ))
 
 register_primitive!(PrimitiveSpec(
     :barrett_reduction,
-    "nexus_barrett_reduction",
-    "primitives/nexus_barrett_reduction.sv",
+    "hwx_barrett_reduction",
+    "primitives/hwx_barrett_reduction.sv",
     3, false,
     Dict(:WORD_WIDTH => 32, :MODULUS => 12289, :K => 349496)
 ))
 
 register_primitive!(PrimitiveSpec(
     :montgomery_multiplier,
-    "nexus_mont_adapter",
-    "primitives/nexus_mont_adapter.sv",
+    "hwx_mont_adapter",
+    "primitives/hwx_mont_adapter.sv",
     3, true,   # variable_latency: iterative FSM takes dozens of cycles
     Dict(:WORD_WIDTH => 32, :NUM_WORDS => 4, :R => 1024, :N => 997, :N_INV_MOD_N => 493)
 ))
 
 register_primitive!(PrimitiveSpec(
     :saturating_add,
-    "nexus_saturating_add",
-    "primitives/nexus_saturating_add.sv",
+    "hwx_saturating_add",
+    "primitives/hwx_saturating_add.sv",
     2, false,
     Dict(:LANES => 4, :DATA_WIDTH => 8)
 ))
