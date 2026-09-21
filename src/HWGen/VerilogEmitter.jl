@@ -23,6 +23,27 @@ function op_to_sv(op::Opcode)::String
     error("No SV operator for opcode: $op")
 end
 
+# Right-hand-side SystemVerilog expression for a compute node, with operand
+# names supplied by `resolve(dep_id, consumer_cycle)`. Shared by the plain
+# pipeline emitter and the resource-sharing emitter so both agree on operator
+# semantics (signed comparisons, 1-bit results zero-extended to W bits, MUX).
+function node_rhs(node::DFGNode, resolve::Function, cyc::Int, W::Int)::String
+    if node.op == OP_MUX
+        cond = resolve(node.inputs[1], cyc)
+        t = resolve(node.inputs[2], cyc)
+        f = resolve(node.inputs[3], cyc)
+        return "|$cond ? $t : $f"
+    end
+    a = resolve(node.inputs[1], cyc)
+    b = resolve(node.inputs[2], cyc)
+    if node.op in (OP_LT, OP_LE, OP_GT, OP_GE)
+        return "{$(W-1)'b0, \$signed($a) $(op_to_sv(node.op)) \$signed($b)}"
+    elseif node.op in (OP_EQ, OP_NEQ, OP_LTU, OP_LEU, OP_GTU, OP_GEU)
+        return "{$(W-1)'b0, $a $(op_to_sv(node.op)) $b}"
+    end
+    return "$a $(op_to_sv(node.op)) $b"
+end
+
 comb_wire(id::Int) = "n$(id)_comb"
 reg_wire(id::Int, c::Int) = "n$(id)_r$(c)"
 # State FSM-specific wire names
@@ -34,10 +55,15 @@ state_ff_wire(id::Int) = "n$(id)_ff"
 # Standard HWExplore datapath port list:
 #   clk_i, rst_ni, start_i, rs1_i [, rs2_i ...], rd_o, done_o
 #
-# Precondition: schedule_asap!(graph) must be called first.
+# Precondition: schedule_asap!(graph) must be called first (unless `share` is
+# given, in which case the graph is re-scheduled for you).
 # Multi-cycle ops are supported via pipeline register chains that span
 # from scheduled_cycle through finish_cycle.
-function emit_verilog(graph::HWGraph, filepath::String)
+function emit_verilog(graph::HWGraph, filepath::String; share=nothing)
+    # `share` = Dict(OP_MUL => 1, ...): re-schedule under that per-opcode unit
+    # budget and emit shared functional units + operand muxes instead of one
+    # operator per node. See src/HWGen/ResourceSharing.jl.
+    share === nothing || return emit_verilog_shared(graph, filepath, share)
     W = 32
     arg_ids = graph.graph_inputs
     ret_node = graph.nodes[graph.graph_outputs[1]]
@@ -128,31 +154,7 @@ function emit_verilog(graph::HWGraph, filepath::String)
     for cyc in 1:max_cycle
         for id in by_cycle[cyc]
             node = graph.nodes[id]
-            lhs = comb_wire(id)
-            if node.op == OP_MUX
-                rhs_cond = resolve(node.inputs[1], cyc)
-                rhs_true = resolve(node.inputs[2], cyc)
-                rhs_false = resolve(node.inputs[3], cyc)
-                push!(lines, "    assign $lhs = |$rhs_cond ? $rhs_true : $rhs_false;")
-            else
-                rhs_a = resolve(node.inputs[1], cyc)
-                rhs_b = resolve(node.inputs[2], cyc)
-                if node.op == OP_LT
-                    push!(lines, "    assign $lhs = {$(W-1)'b0, \$signed($rhs_a) < \$signed($rhs_b)};")
-                elseif node.op == OP_LE
-                    push!(lines, "    assign $lhs = {$(W-1)'b0, \$signed($rhs_a) <= \$signed($rhs_b)};")
-                elseif node.op == OP_GT
-                    push!(lines, "    assign $lhs = {$(W-1)'b0, \$signed($rhs_a) > \$signed($rhs_b)};")
-                elseif node.op == OP_GE
-                    push!(lines, "    assign $lhs = {$(W-1)'b0, \$signed($rhs_a) >= \$signed($rhs_b)};")
-                elseif node.op in (OP_EQ, OP_NEQ, OP_LTU, OP_LEU, OP_GTU, OP_GEU)
-                    sv_op = op_to_sv(node.op)
-                    push!(lines, "    assign $lhs = {$(W-1)'b0, $rhs_a $sv_op $rhs_b};")
-                else
-                    sv_op = op_to_sv(node.op)
-                    push!(lines, "    assign $lhs = $rhs_a $sv_op $rhs_b;")
-                end
-            end
+            push!(lines, "    assign $(comb_wire(id)) = $(node_rhs(node, resolve, cyc, W));")
         end
     end
     push!(lines, "")

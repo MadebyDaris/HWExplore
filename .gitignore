@@ -6,6 +6,7 @@
 **/obj_dir_local/
 **/obj_dir_trace/
 **/obj_dir*/
+/draft/
 
 # Verilator / waveform artifacts
 *.vcd

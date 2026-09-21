@@ -11,7 +11,7 @@ Before contributing, ensure you have the following prerequisites installed:
 - **Python 3**
 - **Make** and a C++ compiler (`g++` or `clang++`)
 
-Ensure that the X-HEEP submodule is fully initialized if you plan to work on system-level integration.
+Ensure that the X-HEEP submodule is fully initialized if you plan to work on system-level integration. Before running anything under `hw/ext_xheep/` or `sw/platforms/xheep/`, `source scripts/xheep_env.sh` in every new shell it sets up the RISC-V toolchain and X-HEEP's own Python venv; see [`docs/Baremetal_and_System_Simulation.md`](docs/Baremetal_and_System_Simulation.md) §1 and §5 if anything there still fails.
 
 ## Development Workflow
 

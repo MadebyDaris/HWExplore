@@ -15,6 +15,10 @@ module cvxif_hwx_shell (
     input logic clk_i,
     input logic rst_ni,
     input logic stall_i,
+    
+    //
+    // CV-X-IF interface signals
+    //
 
     // CV-X-IF Issue Channel
     input  logic        x_issue_req_valid_i,

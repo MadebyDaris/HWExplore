@@ -8,6 +8,7 @@ using IRTools
 # Public API
 # Core macros
 export @nexus_accelerate, @synthesize
+# (@unroll, @tree_reduce, @hwkernel, hw_compile: exported from Core/HWMacros.jl)
 
 # Optimization passes
 export apply_unroll_pass
@@ -55,6 +56,10 @@ include("HWGen/Scheduler.jl")
 include("HWGen/ResourceAllocator.jl")
 include("HWGen/FSMAnalysis.jl")
 include("HWGen/VerilogEmitter.jl")
+include("HWGen/ResourceSharing.jl")
 include("HWGen/DispatcherEmitter.jl")
+
+# Hardware-description macros (need the Opcode enum and emitters above)
+include("Core/HWMacros.jl")
 
 end # module HWExplore

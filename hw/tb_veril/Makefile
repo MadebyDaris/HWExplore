@@ -46,9 +46,35 @@ test_cvxif: tb_cvxif.cpp $(RTL)/cvxif_hwx_shell.sv $(XHEEP)/hw/vendor/openhwgrou
 	$(VERILATOR) $(VFLAGS) --top-module cvxif_hwx_shell $^
 	./obj_dir/Vcvxif_hwx_shell
 
-test_all: test_saturating test_simd_mac test_barrett test_mont_stateful test_mux_all test_cvxif
+test_vector_dot4: tb_vector_dot4.cpp $(RTL)/generated/vector_dot4.sv
+	@rm -rf obj_dir
+	$(VERILATOR) $(VFLAGS) --top-module vector_dot4 $^
+	./obj_dir/Vvector_dot4
+
+# Resource-shared dot4 variants (generate with examples/resource_sharing_sweep.jl):
+# the same testbench, DUT chosen at compile time.
+test_vector_dot4_shared: tb_vector_dot4.cpp
+	@for n in 4 2 1; do \
+	  echo "=== vector_dot4_shared_$$n ==="; \
+	  rm -rf obj_dir; \
+	  $(VERILATOR) $(VFLAGS) -CFLAGS -DDUT=vector_dot4_shared_$$n -CFLAGS -DSCRAMBLE=1 --top-module vector_dot4_shared_$$n \
+	    tb_vector_dot4.cpp $(RTL)/generated/vector_dot4_shared_$$n.sv > /dev/null || exit 1; \
+	  ./obj_dir/Vvector_dot4_shared_$$n || exit 1; \
+	done
+
+# Same testbench for the @hwkernel/hw_compile-built variants (examples/hwkernel_dot4.jl):
+test_hwkernel_dot4: tb_vector_dot4.cpp
+	@for n in 4 2 1; do \
+	  echo "=== dot4_m$$n ==="; \
+	  rm -rf obj_dir; \
+	  $(VERILATOR) $(VFLAGS) -CFLAGS -DDUT=dot4_m$$n -CFLAGS -DSCRAMBLE=1 --top-module dot4_m$$n \
+	    tb_vector_dot4.cpp $(RTL)/generated/dot4_m$$n.sv > /dev/null || exit 1; \
+	  ./obj_dir/Vdot4_m$$n || exit 1; \
+	done
+
+test_all: test_saturating test_simd_mac test_barrett test_mont_stateful test_mux_all test_cvxif test_vector_dot4 test_vector_dot4_shared test_hwkernel_dot4
 
 clean:
 	rm -rf obj_dir *.vcd
 
-.PHONY: test_saturating test_simd_mac test_barrett test_mont_stateful test_mux_all test_cvxif test_all clean
+.PHONY: test_saturating test_simd_mac test_barrett test_mont_stateful test_mux_all test_cvxif test_vector_dot4 test_vector_dot4_shared test_hwkernel_dot4 test_all clean
