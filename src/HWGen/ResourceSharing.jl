@@ -66,10 +66,11 @@ end
     bind_units(graph, budget) -> Vector{UnitBinding}
 
 Assign every node of each budgeted opcode class to a unit by greedy interval
-coloring over [scheduled_cycle, finish_cycle] (optimal for interval graphs, so
-it needs exactly max-overlap units — which a schedule produced with the same
-budget keeps <= budget). Errors if the current schedule needs more units than
-the budget allows; call `schedule_asap!(graph; resources=budget)` first.
+coloring over each node's `(scheduled_cycle, finish_cycle)` span. This is
+optimal for interval graphs, so it needs exactly max-overlap units, which a
+schedule produced with the same budget keeps at or under that budget. Errors
+if the current schedule needs more units than the budget allows; call
+`schedule_asap!(graph; resources=budget)` first.
 """
 function bind_units(graph::HWGraph, budget)::Vector{UnitBinding}
     bindings = UnitBinding[]

@@ -53,3 +53,6 @@ backup/
 # macOS / Windows noise
 .DS_Store
 Thumbs.db
+
+# Generated Documenter.jl output
+/docs/build/

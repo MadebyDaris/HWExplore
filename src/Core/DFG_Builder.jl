@@ -62,16 +62,23 @@ const OP_LATENCY = Dict{Opcode,Int}(
     OP_REG => 1,   # One-cycle registered capture
 )
 
-# A single node in the Data Flow Graph.
-# - id:              unique integer identifier
-# - op:              operation this node performs
-# - bit_width:       data width in bits (32 by default)
-# - inputs:          IDs of nodes that produce this node's operands
-# - const_val:       only set for OP_CONST nodes
-# - scheduled_cycle: filled in by the Scheduler; 0 means unscheduled
-# - latency:         number of clock cycles this operation requires
-# - julia_type:      pre-lowered Julia type (e.g. Matrix{Float32}) for
-#                    downstream BRAM/AXI generation (Phase 2 type preservation)
+"""
+    DFGNode(id, op, bit_width, inputs, const_val, scheduled_cycle, latency,
+            primitive, primitive_params[, julia_type])
+
+One node in a [`HWGraph`](@ref) dataflow graph.
+
+- `id`: unique integer identifier.
+- `op`: the `Opcode` this node performs.
+- `bit_width`: data width in bits (32 by default).
+- `inputs`: IDs of the nodes producing this node's operands, in operand order.
+- `const_val`: only set for `OP_CONST` nodes.
+- `scheduled_cycle`: filled in by the scheduler (e.g. `schedule_asap!`); `0` means unscheduled.
+- `latency`: number of clock cycles this operation requires.
+- `primitive`: for `OP_PRIMITIVE` nodes, the registered primitive-library key to instantiate instead of auto-scheduling.
+- `primitive_params`: extra parameters passed to that primitive.
+- `julia_type`: the pre-lowered Julia type, preserved for downstream use; defaults to `nothing`.
+"""
 mutable struct DFGNode
     id::Int
     op::Opcode
@@ -89,12 +96,20 @@ end
 DFGNode(id, op, bw, inputs, cv, sc, lat, prim, pp) =
     DFGNode(id, op, bw, inputs, cv, sc, lat, prim, pp, nothing)
 
-# The top-level Data Flow Graph.
-# - name:          Verilog module name
-# - nodes:         id -> DFGNode mapping
-# - graph_inputs:  ordered OP_ARG node IDs (rs1, rs2, ...)
-# - graph_outputs: ordered OP_RET node IDs
-# - latency:       pipeline depth, filled in by the Scheduler
+"""
+    HWGraph(name, nodes, graph_inputs, graph_outputs[, latency])
+
+A dataflow graph: the top-level unit HWExplore schedules and emits as one
+SystemVerilog module. Build one directly, or get one back from
+`extract_and_translate` (see the "Guide to Using HWExplore" in the package
+documentation).
+
+- `name`: the emitted Verilog module name.
+- `nodes`: `id => `[`DFGNode`](@ref) for every node in the graph.
+- `graph_inputs`: ordered [`DFGNode`](@ref) IDs of the `OP_ARG` nodes — operand order, mapped to `rs1_i`, `rs2_i`, ... by the emitter.
+- `graph_outputs`: ordered [`DFGNode`](@ref) IDs of the `OP_RET` nodes.
+- `latency`: total pipeline depth in cycles; `0` until a scheduler (e.g. `schedule_asap!`) fills it in. The convenience constructor `HWGraph(name, nodes, ins, outs)` defaults this to `0`.
+"""
 mutable struct HWGraph
     name::String
     nodes::Dict{Int,DFGNode}

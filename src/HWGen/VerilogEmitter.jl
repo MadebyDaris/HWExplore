@@ -50,15 +50,34 @@ reg_wire(id::Int, c::Int) = "n$(id)_r$(c)"
 state_ff_wire(id::Int) = "n$(id)_ff"
 
 
-# Emit a pipelined SystemVerilog module from a scheduled HWGraph.
-#
-# Standard HWExplore datapath port list:
-#   clk_i, rst_ni, start_i, rs1_i [, rs2_i ...], rd_o, done_o
-#
-# Precondition: schedule_asap!(graph) must be called first (unless `share` is
-# given, in which case the graph is re-scheduled for you).
-# Multi-cycle ops are supported via pipeline register chains that span
-# from scheduled_cycle through finish_cycle.
+"""
+    emit_verilog(graph::HWGraph, filepath::String; share=nothing)
+
+Emit a pipelined SystemVerilog module for a feedforward (non-looping)
+[`HWGraph`](@ref) to `filepath`, and return `nothing`.
+
+Every emitted module shares one port list: `clk_i`, `rst_ni`, `start_i`,
+`stall_i`, `rs1_i` through `rs<n>_i` (one per graph input, up to 8), `rd_o`,
+`done_o`. `done_o` asserts exactly `graph.latency` cycles after `start_i`,
+the same cycle `rd_o` is valid. Multi-cycle operations are pipelined
+automatically via register chains spanning `scheduled_cycle` through
+`finish_cycle`.
+
+Precondition: `schedule_asap!(graph)` (or `schedule_asap!(graph; resources=...)`)
+must be called first — unless `share` is given, in which case the graph is
+re-scheduled for you under that budget.
+
+# Keyword arguments
+- `share`: a per-opcode functional-unit budget, e.g. `Dict(OP_MUL => 1)`.
+  When given, nodes of a budgeted opcode class are bound onto that many
+  physical units instead of getting one operator each, with an operand mux
+  selecting which node feeds the shared unit each cycle. See
+  `src/HWGen/ResourceSharing.jl` and the "Guide to Using HWExplore" in the
+  package documentation for what the emitted RTL looks like and its
+  trade-offs. `nothing` (the default) emits one operator per node.
+
+See also [`emit_fsm_verilog`](@ref) for graphs with loops.
+"""
 function emit_verilog(graph::HWGraph, filepath::String; share=nothing)
     # `share` = Dict(OP_MUL => 1, ...): re-schedule under that per-opcode unit
     # budget and emit shared functional units + operand muxes instead of one
