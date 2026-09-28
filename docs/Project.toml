@@ -1,2 +1,3 @@
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+HWExplore = "0c278c5a-e6d2-4994-b813-7ee6218f48e7"

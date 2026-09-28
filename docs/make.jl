@@ -10,12 +10,17 @@
 # branch and no Jekyll involved, so this script itself only ever builds; it
 # never pushes or deploys anything on its own.
 #
-# HWExplore is not (yet) a registered package, so this adds the repository
-# root to LOAD_PATH directly rather than requiring `Pkg.develop` as a separate
-# step first -- `julia --project=docs docs/make.jl` works standalone against
-# an uncommitted local checkout.
+# HWExplore is not (yet) a registered package. `Pkg.develop`-ing it here,
+# rather than just pushing the repo root onto LOAD_PATH, makes `instantiate()`
+# also resolve and install *its* dependencies (MacroTools, IRTools, LLVM,
+# GPUCompiler, DataStructures, ...) into docs/Manifest.toml -- without this,
+# `using HWExplore` fails to precompile on a fresh checkout/CI runner that
+# doesn't already have those installed globally, even though it looks fine
+# locally on a machine where they happen to already be on the default
+# environment's load path.
 
-push!(LOAD_PATH, joinpath(@__DIR__, ".."))
+import Pkg
+Pkg.develop(Pkg.PackageSpec(path = joinpath(@__DIR__, "..")))
 
 using Documenter
 using HWExplore

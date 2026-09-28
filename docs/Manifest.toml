@@ -2,7 +2,7 @@
 
 julia_version = "1.11.9"
 manifest_format = "2.0"
-project_hash = "e0c77beb18dc1f6cce661ebd60658c0c1a77390f"
+project_hash = "16f5b94a2702f785363c688f0939636570360427"
 
 [[deps.ANSIColoredPrinters]]
 git-tree-sha1 = "574baf8110975760d391c710b6341da1afa48d8c"
@@ -26,11 +26,28 @@ version = "1.11.0"
 uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 version = "1.11.0"
 
+[[deps.CEnum]]
+git-tree-sha1 = "389ad5c84de1ae7cf0e28e381131c98ea87d54fc"
+uuid = "fa961155-64e5-5f13-b03f-caf6b980ea82"
+version = "0.5.0"
+
 [[deps.CodecZlib]]
 deps = ["TranscodingStreams", "Zlib_jll"]
 git-tree-sha1 = "970758a3d591a2a5c2a907c53f2e2f8c1b1d3537"
 uuid = "944b1d66-785c-5afd-91f1-9de20f533193"
 version = "0.7.9"
+
+[[deps.CompilerCaching]]
+deps = ["LMDB", "SHA", "Scratch"]
+git-tree-sha1 = "b032c1ce89bc82adf2bef8181c2fb75d6bce7f4a"
+uuid = "9db33cc3-5358-4881-8759-fa4194144afd"
+version = "0.5.1"
+
+[[deps.DataStructures]]
+deps = ["OrderedCollections"]
+git-tree-sha1 = "b0bc6d2cad1fed8b7fd59a1551a991cb3d2809e6"
+uuid = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+version = "0.19.6"
 
 [[deps.Dates]]
 deps = ["Printf"]
@@ -59,9 +76,31 @@ git-tree-sha1 = "2bfb1e047e2ad0a5ca94365340bde8005d637568"
 uuid = "2e619515-83b5-522b-bb60-26c02a35a201"
 version = "2.8.4+0"
 
+[[deps.ExprTools]]
+git-tree-sha1 = "d2e49e7efd29719d6f28b891b0e0e159daa9d2b4"
+uuid = "e2ba6199-217a-4e67-a87a-7c52f15ade04"
+version = "0.1.11"
+
 [[deps.FileWatching]]
 uuid = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
 version = "1.11.0"
+
+[[deps.GPUCompiler]]
+deps = ["CompilerCaching", "ExprTools", "InteractiveUtils", "LLVM", "Libdl", "Logging", "PrecompileTools", "Preferences", "REPL", "ScopedValues", "TOML", "Tracy", "UUIDs", "tree_sitter_gcn_jll", "tree_sitter_llvm_jll", "tree_sitter_ptx_jll", "tree_sitter_spirv_jll"]
+git-tree-sha1 = "776a466823d042ee195309d69f36a246e49e6fac"
+uuid = "61eb1bfa-7361-4325-ad38-22787b887f55"
+version = "2.8.1"
+
+    [deps.GPUCompiler.extensions]
+    HighlightsExt = "Highlights"
+
+    [deps.GPUCompiler.weakdeps]
+    AMDGPU_LLVM_Backend_jll = "cc5c0156-bd05-5a77-8a68-bb0aafb29019"
+    Highlights = "eafb193a-b7ab-5a9e-9068-77385905fa72"
+    LLVMDowngrader_jll = "f52de702-fb25-5922-94ba-81dd59b07444"
+    NVPTX_LLVM_Backend_jll = "ef6e0fe3-e6ef-59c0-bde6-4989574699e0"
+    SPIRV_LLVM_Backend_jll = "4376b9bf-cff8-51b6-bb48-39421dff0d0c"
+    SPIRV_LLVM_Translator_jll = "4a5d46fc-d8cf-5151-a261-86b458210efb"
 
 [[deps.Git]]
 deps = ["Git_LFS_jll", "Git_jll", "JLLWrappers", "OpenSSH_jll"]
@@ -81,11 +120,28 @@ git-tree-sha1 = "7b16700f9e313c0d972d1222ede50a2076aa0770"
 uuid = "f8c6e375-362e-5223-8a59-34ff63f689eb"
 version = "2.55.0+0"
 
+[[deps.HWExplore]]
+deps = ["DataStructures", "GPUCompiler", "IRTools", "LLVM", "MacroTools"]
+path = "/home/daris/Documents/workspace/NexusV/docs/.."
+uuid = "0c278c5a-e6d2-4994-b813-7ee6218f48e7"
+version = "0.1.0"
+
+[[deps.HashArrayMappedTries]]
+git-tree-sha1 = "2eaa69a7cab70a52b9687c8bf950a5a93ec895ae"
+uuid = "076d061b-32b6-4027-95e0-9a2c6f6d7e74"
+version = "0.2.0"
+
 [[deps.IOCapture]]
 deps = ["Logging", "Random"]
 git-tree-sha1 = "0ee181ec08df7d7c911901ea38baf16f755114dc"
 uuid = "b5f81e59-6552-4d32-b1f0-c071b021bf89"
 version = "1.0.0"
+
+[[deps.IRTools]]
+deps = ["InteractiveUtils", "MacroTools"]
+git-tree-sha1 = "88d07a6b68b8fffb13cacd49e23ea73c571859b2"
+uuid = "7869d1d1-7146-5819-86e3-90919afe41df"
+version = "0.4.20"
 
 [[deps.InteractiveUtils]]
 deps = ["Markdown"]
@@ -110,10 +166,45 @@ version = "1.9.0"
     [deps.JSON.weakdeps]
     ArrowTypes = "31f734f8-188a-4ce0-8406-c8a06bd891cd"
 
+[[deps.LLVM]]
+deps = ["CEnum", "LLVMExtra_jll", "Libdl", "PrecompileTools", "Preferences", "Printf", "Unicode"]
+git-tree-sha1 = "d4bfee24427f4f441bd9212a107e375c39663aab"
+uuid = "929cbde3-209d-540e-8aea-75f648917ca0"
+version = "9.13.1"
+
+    [deps.LLVM.extensions]
+    BFloat16sExt = "BFloat16s"
+
+    [deps.LLVM.weakdeps]
+    BFloat16s = "ab4f0b2a-ad5b-11e8-123f-65d77653426b"
+
+[[deps.LLVMExtra_jll]]
+deps = ["Artifacts", "JLLWrappers", "LazyArtifacts", "Libdl", "TOML"]
+git-tree-sha1 = "d77aea19c9a71059a021acd99b0a4343e9661d94"
+uuid = "dad2f222-ce93-54a1-a47d-0025e8a3acab"
+version = "0.0.47+0"
+
+[[deps.LMDB]]
+deps = ["CEnum", "LMDB_jll"]
+git-tree-sha1 = "84e5cba87693714bfd67f589a91f24a996ff3e69"
+uuid = "11f193de-5e89-5f17-923a-7d207d56daf9"
+version = "3.0.1"
+
+[[deps.LMDB_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "56b8af9f260b5a5ea4cd3c12cb8faa028cf8fa15"
+uuid = "6206cf0b-f360-5984-af49-5437264c140e"
+version = "1.0.0+0"
+
 [[deps.LazilyInitializedFields]]
 git-tree-sha1 = "0f2da712350b020bc3957f269c9caad516383ee0"
 uuid = "0e77f7df-68c5-4e49-93ce-4cd80f5598bf"
 version = "1.3.0"
+
+[[deps.LazyArtifacts]]
+deps = ["Artifacts", "Pkg"]
+uuid = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
+version = "1.11.0"
 
 [[deps.LibCURL]]
 deps = ["LibCURL_jll", "MozillaCACerts_jll"]
@@ -140,6 +231,12 @@ deps = ["Artifacts", "Libdl", "MbedTLS_jll"]
 uuid = "29816b5a-b9ab-546f-933c-edad1886dfa8"
 version = "1.11.0+1"
 
+[[deps.LibTracyClient_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "d4e20500d210247322901841d4eafc7a0c52642d"
+uuid = "ad6e5548-8b26-5c9f-8ef3-ef0ad883f3a5"
+version = "0.13.1+0"
+
 [[deps.Libdl]]
 uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 version = "1.11.0"
@@ -153,6 +250,11 @@ version = "1.18.0+0"
 [[deps.Logging]]
 uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 version = "1.11.0"
+
+[[deps.MacroTools]]
+git-tree-sha1 = "1e0228a030642014fe5cfe68c2c0a818f9e3f522"
+uuid = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
+version = "0.5.16"
 
 [[deps.Markdown]]
 deps = ["Base64"]
@@ -189,6 +291,11 @@ deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "7787087cbc5ec110986e94d9aa1f17639a79c5de"
 uuid = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
 version = "3.5.8+0"
+
+[[deps.OrderedCollections]]
+git-tree-sha1 = "05f45c2e0de6259db764adbfd2f1dc6d3f8de13c"
+uuid = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
+version = "2.0.1"
 
 [[deps.PCRE2_jll]]
 deps = ["Artifacts", "Libdl"]
@@ -247,6 +354,18 @@ version = "0.1.0"
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 version = "0.7.0"
 
+[[deps.ScopedValues]]
+deps = ["HashArrayMappedTries", "Logging"]
+git-tree-sha1 = "67a144433c4ce877ee6d1ada69a124d6b1ecf7be"
+uuid = "7e506255-f358-4e82-b7e4-beb19740aa63"
+version = "1.6.2"
+
+[[deps.Scratch]]
+deps = ["Dates"]
+git-tree-sha1 = "9b81b8393e50b7d4e6d0a9f14e192294d3b7c109"
+uuid = "6c6a2e73-6563-6170-7368-637461726353"
+version = "1.3.0"
+
 [[deps.Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 version = "1.11.0"
@@ -292,6 +411,18 @@ deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
 uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 version = "1.11.0"
 
+[[deps.Tracy]]
+deps = ["ExprTools", "LibTracyClient_jll", "Libdl"]
+git-tree-sha1 = "73e3ff50fd3990874c59fef0f35d10644a1487bc"
+uuid = "e689c965-62c8-4b79-b2c5-8359227902fd"
+version = "0.1.6"
+
+    [deps.Tracy.extensions]
+    TracyProfilerExt = "TracyProfiler_jll"
+
+    [deps.Tracy.weakdeps]
+    TracyProfiler_jll = "0c351ed6-8a68-550e-8b79-de6f926da83c"
+
 [[deps.TranscodingStreams]]
 git-tree-sha1 = "0c45878dcfdcfa8480052b6ab162cdd138781742"
 uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
@@ -320,3 +451,27 @@ version = "1.59.0+0"
 deps = ["Artifacts", "Libdl"]
 uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 version = "17.4.0+2"
+
+[[deps.tree_sitter_gcn_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "7aea9f731552967bda93cb7cbf6925de65bc38d5"
+uuid = "8b5cbfcf-8811-596e-8e87-0e51e05ee4b2"
+version = "0.1.0+0"
+
+[[deps.tree_sitter_llvm_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "2fb7d0e3a8abf532fa922766ca130bf814df1e70"
+uuid = "44208993-ee63-5069-9443-8e43b04a9b30"
+version = "1.1.0+0"
+
+[[deps.tree_sitter_ptx_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "e6ad264eebe3e34f03bca6b5e811d80e0f4797a2"
+uuid = "71e3f6e6-c059-5e7c-a2f2-d560fdad7ce5"
+version = "0.1.0+0"
+
+[[deps.tree_sitter_spirv_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "7d8c03949bab84b23fe0500d89979e786d54a653"
+uuid = "f0e86581-c468-54df-a4de-3266e11a3c86"
+version = "0.1.0+0"
