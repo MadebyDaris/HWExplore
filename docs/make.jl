@@ -5,6 +5,11 @@
 #   julia --project=docs docs/make.jl
 # then open docs/build/index.html.
 #
+# On CI (see .github/workflows/docs.yml), this also deploys the build to the
+# gh-pages branch, which GitHub Pages serves. deploydocs() no-ops locally
+# (it only pushes when the CI env var is set), so running this script by hand
+# never touches gh-pages.
+#
 # HWExplore is not (yet) a registered package, so this adds the repository
 # root to LOAD_PATH directly rather than requiring `Pkg.develop` as a separate
 # step first -- `julia --project=docs docs/make.jl` works standalone against
@@ -37,4 +42,10 @@ makedocs(;
     # reasonable follow-up once the API reference is meant to be exhaustive,
     # not just "everything that's documented so far".
     checkdocs = :none,
+)
+
+deploydocs(;
+    repo = "github.com/MadebyDaris/HWExplore.git",
+    devbranch = "main",
+    push_preview = true,
 )
