@@ -7,18 +7,12 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Allow this workflow's GITHUB_TOKEN to push to gh-pages.
-permissions:
-  contents: write
-  pull-requests: read
-  statuses: write
-
 concurrency:
   group: docs-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  docs:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,13 +22,28 @@ jobs:
       - uses: julia-actions/cache@v2
       - name: Instantiate docs environment
         run: julia --project=docs -e 'using Pkg; Pkg.instantiate()'
-      - name: Build and deploy documentation
+      - name: Build documentation
         run: julia --project=docs docs/make.jl
         env:
-          # Documenter uses the ambient GITHUB_TOKEN to push to gh-pages when
-          # running on GitHub Actions -- no separate DOCUMENTER_KEY deploy key
-          # needed for a repo you own. deploydocs() itself checks CI/GITHUB_*
-          # env vars and no-ops for a plain `pull_request` build from a fork
-          # (push_preview only applies to PRs from within this repo).
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JULIA_DEBUG: Documenter
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/build
+
+  # Deploys straight to GitHub Pages via the native Actions deployment API --
+  # no gh-pages branch, no Jekyll. Requires Settings -> Pages -> Source ->
+  # "GitHub Actions" (not "Deploy from a branch"). Skipped on PRs, since
+  # Pages only has one live deployment target.
+  deploy:
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
