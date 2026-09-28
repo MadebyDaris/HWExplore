@@ -126,6 +126,15 @@ See [`docs/Usage_and_Examples.md`](docs/Usage_and_Examples.md) for the full walk
 - Verilator 5.x
 - C++ compiler (`clang++` or `g++`)
 
+## Quick synthesis check
+
+`synth/` runs a handful of generated datapaths through Yosys+ABC against the Sky130 liberty file already vendored for the X-HEEP ASIC flow, not a real ASIC flow (no floorplanning, timing closure, DRC/LVS), just a quick sanity check that the generated RTL actually synthesizes and a rough area comparison. Run it with `synth/run_synth.sh` (needs `yosys` on `PATH`).
+
+
+The last three show the same 4-element dot product compiled with `emit_verilog(...; share=Dict(OP_MUL=>n))` for `n=4,2,1` — resource sharing trading physical multipliers for area, exactly as expected:
+
+![Chip area per generated design, Sky130](synth/results/area_chart.png)
+
 ## How it's structured
 
 ```text

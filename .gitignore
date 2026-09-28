@@ -56,3 +56,9 @@ Thumbs.db
 
 # Generated Documenter.jl output
 /docs/build/
+
+# Regenerable per-run Yosys artifacts (summary.csv and area_chart.png, which
+# the README embeds, are kept)
+/synth/results/*.log
+/synth/results/*.json
+/synth/results/*.ys

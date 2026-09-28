@@ -13,7 +13,26 @@ You define your math. HWExplore turns it into either:
 
 routed through the *same* auto-generated dispatcher, so a hand-written and an auto-generated accelerator look identical to the CPU issuing instructions.
 
+## From Julia to hardware simulation, briefly
+
+```@raw html
+<pre>
+Julia function  →  dataflow graph  →  scheduled + bound  →  SystemVerilog  →  Verilator / X-HEEP sim
+   @hwkernel        HWGraph            schedule_asap!        emit_verilog      real RISC-V binary issuing
+   or hw_compile     / DFGNode          + bind_units          (+ CV-X-IF        the custom instruction,
+                                                                 dispatcher)     checked against the same
+                                                                                 Julia function as golden model
+</pre>
+```
+
+That whole loop — write ordinary Julia, get back simulated, correct hardware — is what the [Guide to Using HWExplore](@ref) walks through end to end; see the [Guide to High-Level Synthesis (HLS)](@ref) if any of those stage names (scheduling, binding) are unfamiliar.
+
 ## Where to start
+
+- **New here?** [Installation](@ref) first, then the [Guide to Using HWExplore](@ref) for the Julia → RTL → simulation loop end to end.
+- **New to hardware synthesis?** [Guide to High-Level Synthesis (HLS)](@ref) explains the terms this documentation otherwise assumes — scheduling, binding, initiation interval — and maps them onto exactly what HWExplore's pipeline does.
+- **Want the RTL/CV-X-IF protocol detail?** `docs/Architecture_and_Internals.md`.
+- **Want the function reference?** [API Reference](@ref).
 
 ## What it delivers today
 
