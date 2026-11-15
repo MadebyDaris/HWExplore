@@ -40,6 +40,7 @@ makedocs(;
         "Installation" => "install.md",
         "Guide to Using HWExplore" => "guide.md",
         "Guide to High-Level Synthesis (HLS)" => "hls_guide.md",
+        "Dot-Product Engine Generator" => "dotgen.md",
         "API Reference" => "api.md",
     ],
     # No strict checkdocs: several exported symbols (Opcode, PrimitiveSpec,

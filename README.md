@@ -102,6 +102,16 @@ make -C obj_dir -f Vmy_accel.mk Vmy_accel
 
 See [`docs/Usage_and_Examples.md`](docs/Usage_and_Examples.md) for the full walkthrough, including shell-level and waveform-based debugging.
 
+## Generating low-precision dot-product engines
+
+`bin/hwx` generates block dot-product engines for MX and other low-precision formats, with a bit-exact Julia reference model, Verilator verification and Yosys synthesis:
+
+```bash
+bin/hwx dot --a mxfp4 --b mxfp8 --block 32 --acc fp32 --pdk sg13g2 --verify --synth
+```
+
+Products are aligned once, summed in one carry-save compressor tree and rounded once, instead of chaining floating-point adders. See [`docs/src/dotgen.md`](docs/src/dotgen.md) for the arithmetic, the knobs (alignment window, rounding, tree, pipeline) and SG13G2 results for 13 design points.
+
 ## Project status
 
 | Component | Status | Notes |
@@ -223,11 +233,11 @@ For the detailed, step-by-step version of items 3–5 below, including exactly w
 **Done**
 - ~~Full-system `hwx_top.sv` simulation on X-HEEP with a real compiled RISC-V ELF, exercising a custom instruction end to end~~: verified `cv32e40px` + CV-X-IF-enabled X-HEEP, real cross-compiled firmware, all 4 stateless `funct3` datapaths, `EXIT SUCCESS`.
 - ~~Bare-metal C test suite (`sw/platforms/xheep/tests`), exercising every datapath behind the mux from real RISC-V code~~: `smoke_test`, `minimal`, and `test_mac` all pass.
+- ~~Wire `OP_PRIMITIVE` all the way through `VerilogEmitter.jl`~~: a primitive node is now instantiated as a real module (not just latency-accounted), with an automatically-sized start-pulse delay register landing its result on the exact cycle any consumer expects it. Verified structurally (`tests/test_primitive_emission.jl`), by Yosys elaboration, and functionally in Verilator (correct value, correct cycle-accurate `done_o`). Unregistered/placeholder primitive keys (`:opaque`, `:bram_read`/`:bram_write`) and variable-latency primitives are rejected with a specific error rather than silently emitting wrong RTL.
 
 **Near term: finish what's in flight**
-1. Wire `OP_PRIMITIVE` all the way through `VerilogEmitter.jl` → emit real module instantiations (not just latency keeping) for primitive nodes sitting inside a generated graph.
-2. Fix and finish the scratchpad SRAM module → connect it to CV-X-IF's currently unused Memory/Memory-Result channels.
-3. Finish the Barrett reducer (pipelined, registered, `done_o`-compliant, in the registry).
+1. Fix and finish the scratchpad SRAM module → connect it to CV-X-IF's currently unused Memory/Memory-Result channels.
+2. Finish the Barrett reducer (pipelined, registered, `done_o`-compliant, in the registry).
 
 **Mid term: make it a real accelerator, not a demo**
 4. Resource-constrained scheduling: let the scheduler share a limited pool of multipliers/adders across a graph instead of instantiating one per operation, with automatic mux insertion.

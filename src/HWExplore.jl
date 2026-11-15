@@ -22,6 +22,7 @@ export register_unroll_hint!, get_unroll_hint, clear_unroll_hints!
 # DFG types
 export Opcode, OP_ARG, OP_CONST, OP_ADD, OP_SUB, OP_MUL, OP_RET
 export OP_SHR, OP_SHL, OP_AND, OP_OR, OP_XOR, OP_MOD, OP_MUX, OP_REG
+export OP_PRIMITIVE, OP_EQ, OP_NEQ, OP_LT, OP_LE, OP_GT, OP_GE, OP_LTU, OP_LEU, OP_GTU, OP_GEU
 export DFGNode, HWGraph, OP_LATENCY
 
 # IR Extraction & Translation (Phase 2 & 3)
@@ -35,6 +36,10 @@ export FSMAnalysis, analyse_fsm
 export emit_verilog, emit_fsm_verilog
 export emit_dispatcher, DatapathEntry
 export PrimitiveSpec, PRIMITIVES, register_primitive!
+
+# Block dot-product engine generator (number formats → bit-exact model → RTL → verify/synth).
+# Kept as a submodule to avoid name clashes: `using HWExplore.DotGen`.
+export DotGen
 
 # Internals
 
@@ -58,6 +63,7 @@ include("HWGen/FSMAnalysis.jl")
 include("HWGen/VerilogEmitter.jl")
 include("HWGen/ResourceSharing.jl")
 include("HWGen/DispatcherEmitter.jl")
+include("DotGen/DotGen.jl")
 
 # Hardware-description macros (need the Opcode enum and emitters above)
 include("Core/HWMacros.jl")

@@ -62,3 +62,5 @@ Thumbs.db
 /synth/results/*.log
 /synth/results/*.json
 /synth/results/*.ys
+# Downloaded PDK liberty files (IHP SG13G2 etc.); see src/DotGen/Synth.jl
+/synth/pdk/

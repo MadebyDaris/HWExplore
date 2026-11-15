@@ -1,0 +1,14 @@
+label,module,sum_bits,area_um2,cells,flops,logic_delay_ps,bit_exact
+mxfp4×mxfp4,hwx_dot_mxfp4_mxfp4_k32_fp32,14,49189.7,5379,58,5028.4,true
+mxfp4×mxfp8 (E4M3),hwx_dot_mxfp4_mxfp8e4m3_k32_fp32,28,140488.9,15905,73,8192.0,true
+mxfp4×mxfp8, adder tree,hwx_dot_mxfp4_mxfp8e4m3_k32_fp32,28,163443.2,18423,73,8575.4,true
+mxfp4×mxfp8, window 16,hwx_dot_mxfp4_mxfp8e4m3_k32_fp32_w16,22,161129.8,18100,67,10684.8,true
+mxfp6×mxfp6 (E2M3),hwx_dot_mxfp6e2m3_mxfp6e2m3_k32_fp32,18,128437.4,14473,63,5569.1,true
+mxfp8×mxfp8 (E4M3),hwx_dot_mxfp8e4m3_mxfp8e4m3_k32_fp32,42,235902.5,26686,87,10724.4,true
+mxfp8×mxfp8, window 16,hwx_dot_mxfp8e4m3_mxfp8e4m3_k32_fp32_w16,22,184300.9,20864,67,11892.2,true
+mxfp8×mxfp8 (E5M2),hwx_dot_mxfp8e5m2_mxfp8e5m2_k32_fp32,70,258113.7,28362,117,14025.8,true
+mxint8×mxint8,hwx_dot_mxint8_mxint8_k32_fp32,21,237401.8,26926,66,6381.9,true
+ternary×mxfp8,hwx_dot_ternary_mxfp8e4m3_k32_fp32,24,87244.0,9484,68,8235.7,true
+int4×int8 → int32,hwx_dot_int4_int8_k32_int32,17,116673.6,13377,36,4428.1,true
+int8×int8 → int32,hwx_dot_int8_int8_k32_int32,21,245946.3,28192,44,4763.0,true
+ternary×int8 → int32,hwx_dot_ternary_int8_k32_int32,14,43376.8,4936,30,3449.0,true

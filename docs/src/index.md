@@ -25,7 +25,7 @@ Julia function  →  dataflow graph  →  scheduled + bound  →  SystemVerilog 
 </pre>
 ```
 
-That whole loop — write ordinary Julia, get back simulated, correct hardware — is what the [Guide to Using HWExplore](@ref) walks through end to end; see the [Guide to High-Level Synthesis (HLS)](@ref) if any of those stage names (scheduling, binding) are unfamiliar.
+That whole loop from write ordinary Julia, get back simulated, correct hardware is what the [Guide to Using HWExplore](@ref) walks through end to end; see the [Guide to High-Level Synthesis (HLS)](@ref) if any of those stage names (scheduling, binding) are unfamiliar.
 
 ## Where to start
 

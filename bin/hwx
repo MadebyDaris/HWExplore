@@ -1,0 +1,115 @@
+#!/usr/bin/env -S julia --startup-file=no --compile=min -O1
+# hwx: HWExplore command-line generator.
+#
+#   hwx dot --a mxfp4 --b mxfp8 --block 32 --acc fp32 --pdk sg13g2 [--verify] [--synth]
+#   hwx formats
+#
+# Loads only src/DotGen (no LLVM/GPUCompiler), so it starts in a few seconds.
+
+include(joinpath(@__DIR__, "..", "src", "DotGen", "DotGen.jl"))
+using .DotGen
+
+const USAGE = """
+usage: hwx dot [options]       generate a block dot-product engine
+       hwx formats             list element / output formats
+
+dot options:
+  --a FMT          element format of a          (default mxfp4)
+  --b FMT          element format of b          (default mxfp8)
+  --block K        lanes summed per result      (default 32)
+  --acc FMT        output: fp32 | bf16 | fp16 | int<N>   (default fp32)
+  --window W|exact per-term alignment window in bits; exact = no product bits dropped (default exact)
+  --round MODE     rne | rtz, applied once at the end (default rne)
+  --tree KIND      csa (3:2 compressor tree + 1 CPA) | adder (default csa)
+  --stages N       pipeline registers 0..3        (default 2)
+  --name NAME      module name                    (default derived from the config)
+  --out DIR        output directory               (default hw/rtl/generated/dot)
+  --verify         simulate in Verilator against the bit-exact Julia model
+  --vectors N      random vectors for --verify (default 5000; exhaustive products are added)
+  --synth          synthesize with Yosys+ABC and report area / delay
+  --pdk PDK        sg13g2 | sky130 | path/to/cells.lib  (default sg13g2)
+"""
+
+function parse_opts(args)
+    opts = Dict{String,String}()
+    flags = Set{String}()
+    i = 1
+    while i <= length(args)
+        a = args[i]
+        startswith(a, "--") || error("unexpected argument '$a'")
+        k = a[3:end]
+        if k in ("verify", "synth", "help")
+            push!(flags, k); i += 1
+        else
+            i < length(args) || error("option $a needs a value")
+            opts[k] = args[i+1]; i += 2
+        end
+    end
+    return opts, flags
+end
+
+function cmd_dot(args)
+    opts, flags = parse_opts(args)
+    "help" in flags && (print(USAGE); return 0)
+    known = Set(["a", "b", "block", "acc", "window", "round", "tree", "stages", "name", "out", "vectors", "pdk"])
+    for k in keys(opts)
+        k in known || error("unknown option --$k")
+    end
+    win = get(opts, "window", "exact")
+    cfg = DotConfig(
+        a=get(opts, "a", "mxfp4"), b=get(opts, "b", "mxfp8"),
+        block=parse(Int, get(opts, "block", "32")), acc=get(opts, "acc", "fp32"),
+        window=win == "exact" ? nothing : parse(Int, win),
+        rounding=Symbol(get(opts, "round", "rne")), tree=Symbol(get(opts, "tree", "csa")),
+        stages=parse(Int, get(opts, "stages", "2")), name=get(opts, "name", nothing))
+    out = get(opts, "out", joinpath(DotGen.REPO_ROOT, "hw", "rtl", "generated", "dot"))
+    println(describe(cfg))
+    path = emit_dot(cfg, out)
+    rp = relpath(path); println("\nrtl         ", startswith(rp, "..") ? path : rp)
+    status = 0
+    if "verify" in flags
+        dir = joinpath(out, "verify_" * cfg.name)
+        println()
+        r = verify_dot(cfg; dir, nrand=parse(Int, get(opts, "vectors", "5000")))
+        r.errors == 0 || (status = 1)
+    end
+    if "synth" in flags
+        pdk = get(opts, "pdk", "sg13g2")
+        dir = joinpath(out, "synth_" * cfg.name)
+        mkpath(dir)
+        println("\n[synth] yosys + abc against $(basename(find_liberty(pdk))) ...")
+        s = synth_dot(cfg; pdk, dir, rtl=path)
+        println("[synth] area $(round(s.area_um2, digits=1)) µm²   cells $(s.cells)   flops $(s.flops)   ",
+                "critical path $(round(s.delay_ps / 1000, digits=2)) ns (logic only, no wires)")
+    end
+    return status
+end
+
+function cmd_formats()
+    println("element formats (mx* = with an E8M0 shared block scale):")
+    for n in FORMAT_NAMES
+        f, s = parse_elem(n)
+        println("  ", rpad(n, 11), rpad("$(nbits(f)) bits", 9), s ? "scaled  " : "        ",
+                f isa FPElem ? "E$(f.ebits)M$(f.mbits) bias $(f.bias)" * (f.specials == :none ? "" : ", specials: $(f.specials)") :
+                f isa IntElem ? "two's complement" * (f.frac > 0 ? " × 2^-$(f.frac)" : "") : "{-1, 0, +1}")
+    end
+    println("output formats: fp32, bf16, fp16 (rounded once), int<N> (saturating, integer elements only)")
+    return 0
+end
+
+function main(args)
+    isempty(args) && (print(USAGE); return 1)
+    cmd, rest = args[1], args[2:end]
+    try
+        cmd == "dot" && return cmd_dot(rest)
+        cmd == "formats" && return cmd_formats()
+        cmd in ("-h", "--help", "help") && (print(USAGE); return 0)
+        println(stderr, "unknown command '$cmd'\n"); print(stderr, USAGE); return 1
+    catch e
+        e isa ErrorException || rethrow()
+        println(stderr, "hwx: ", e.msg)
+        return 1
+    end
+end
+
+exit(main(ARGS))

@@ -49,6 +49,89 @@ reg_wire(id::Int, c::Int) = "n$(id)_r$(c)"
 # State FSM-specific wire names
 state_ff_wire(id::Int) = "n$(id)_ff"
 
+# --- OP_PRIMITIVE support -------------------------------------------------
+#
+# An OP_PRIMITIVE node isn't a combinational expression like node_rhs's other
+# opcodes -- it's a real, separately-pipelined SystemVerilog module (from
+# PrimitiveLibrary.jl) instantiated inline, with its own start_i/done_o
+# handshake. Timing derivation (see the pipeline model this emitter already
+# uses for ordinary multi-cycle nodes): a node scheduled at `scheduled_cycle`
+# has its inputs' registered values valid starting at tick `scheduled_cycle -
+# 1` (tick 0 = the cycle the module's own start_i pulses), since
+# schedule_asap!/schedule_list! always place a node strictly after every
+# dependency finishes. So the primitive's own start_i must pulse at that same
+# tick -- `scheduled_cycle - 1` ticks after the module's start_i -- which is
+# exactly what the delay shift register below produces (0 ticks = start_i
+# directly, matching how a normal cycle-1 node needs no delay either). Its
+# rd_o is then valid exactly `node.latency` ticks later, i.e. at tick
+# `finish_cycle(node)`, so it's wired directly into reg_wire(id, finish_cycle)
+# -- the same wire name any consumer already expects a node's finished value
+# to live in.
+
+# Return the PrimitiveSpec for an OP_PRIMITIVE node, or error with a specific,
+# actionable reason if it can't actually be instantiated as real RTL.
+function primitive_spec_for(node::DFGNode)::PrimitiveSpec
+    node.primitive !== nothing || error("primitive_spec_for called on a non-OP_PRIMITIVE node $(node.id)")
+    haskey(PRIMITIVES, node.primitive) || error(
+        "OP_PRIMITIVE node $(node.id) references unregistered primitive :$(node.primitive) -- " *
+        "it has no backing SystemVerilog module in PrimitiveLibrary.jl. This placeholder key is " *
+        "inserted by IRTranslator.jl for calls it can't lower yet (e.g. :opaque, :bram_read/:bram_write); " *
+        "it can't be synthesized as-is. Register a real PrimitiveSpec for it first."
+    )
+    spec = PRIMITIVES[node.primitive]
+    spec.variable_latency && error(
+        "OP_PRIMITIVE node $(node.id) uses :$(node.primitive), a variable-latency primitive " *
+        "(PrimitiveSpec.variable_latency = true). This emitter assumes every node's result is ready " *
+        "at a statically-known cycle, which a variable-latency module can't guarantee -- instantiate " *
+        "it directly (e.g. via the dispatcher/build manifest) instead of embedding it in a DFG."
+    )
+    length(node.inputs) == 2 || error(
+        "OP_PRIMITIVE node $(node.id) (:$(node.primitive)) has $(length(node.inputs)) input(s); " *
+        "the emitter only supports the canonical 2-operand (rs1_i/rs2_i) primitive interface."
+    )
+    return spec
+end
+
+sv_literal(v::Integer) = string(v)
+sv_literal(v) = string(v)  # best-effort fallback for non-integer param overrides
+
+# Merge a primitive's registered default parameters with the node's own
+# overrides (node wins), formatted as SystemVerilog `#( ... )` instance text,
+# or "" if there's nothing to override.
+function primitive_param_text(spec::PrimitiveSpec, node::DFGNode)::String
+    merged = merge(spec.params, node.primitive_params)
+    isempty(merged) && return ""
+    items = ["." * String(k) * "(" * sv_literal(v) * ")" for (k, v) in sort(collect(merged); by=first)]
+    return " #(\n        " * join(items, ",\n        ") * "\n    )"
+end
+
+# Declarations + instantiation for one OP_PRIMITIVE node. `resolve` is the
+# same operand-resolution closure emit_verilog already builds for ordinary
+# nodes, so a primitive's operands are sourced exactly like any other node's.
+function primitive_instance_lines(node::DFGNode, resolve::Function)::Vector{String}
+    spec = primitive_spec_for(node)
+    id = node.id
+    delay = node.scheduled_cycle - 1   # ticks after module start_i (see note above)
+    start_sig = delay == 0 ? "start_i" : "prim$(id)_start_sr[$(delay-1)]"
+
+    lines = String[]
+    delay > 0 && push!(lines, "    logic [$(delay-1):0] prim$(id)_start_sr;")
+    push!(lines, "    logic prim$(id)_done;")
+    rs1 = resolve(node.inputs[1], node.scheduled_cycle)
+    rs2 = resolve(node.inputs[2], node.scheduled_cycle)
+    push!(lines, "    $(spec.module_name)$(primitive_param_text(spec, node)) u_prim$(id) (")
+    push!(lines, "        .clk_i   (clk_i),")
+    push!(lines, "        .rst_ni  (rst_ni),")
+    push!(lines, "        .start_i ($(start_sig)),")
+    push!(lines, "        .stall_i (stall_i),")
+    push!(lines, "        .rs1_i   ($(rs1)),")
+    push!(lines, "        .rs2_i   ($(rs2)),")
+    push!(lines, "        .rd_o    ($(reg_wire(id, finish_cycle(node)))),")
+    push!(lines, "        .done_o  (prim$(id)_done)")
+    push!(lines, "    );")
+    return lines
+end
+
 
 """
     emit_verilog(graph::HWGraph, filepath::String; share=nothing)
@@ -89,12 +172,18 @@ function emit_verilog(graph::HWGraph, filepath::String; share=nothing)
     out_id = ret_node.inputs[1]
     max_cycle = graph.latency
 
-    # Group compute nodes by their scheduled (start) cycle
+    # Group compute nodes by their scheduled (start) cycle. OP_PRIMITIVE nodes
+    # are excluded -- they're emitted as module instances (see "Primitive
+    # instances" below), not `assign` statements, and validated up front so a
+    # bad primitive reference fails before any RTL text is generated.
     by_cycle = [Int[] for _ in 1:max_cycle]
+    primitive_ids = Int[]
     for (id, node) in graph.nodes
+        node.op == OP_PRIMITIVE && (primitive_spec_for(node); push!(primitive_ids, id); continue)
         node.op in (OP_ARG, OP_CONST, OP_RET) && continue
         push!(by_cycle[node.scheduled_cycle], id)
     end
+    sort!(primitive_ids)
 
     port_names = ["rs1_i", "rs2_i", "rs3_i", "rs4_i", "rs5_i", "rs6_i", "rs7_i", "rs8_i"]
 
@@ -141,17 +230,30 @@ function emit_verilog(graph::HWGraph, filepath::String; share=nothing)
     # Combinational wires
     push!(lines, "    // Combinational result wires")
     for (id, node) in graph.nodes
-        node.op in (OP_ARG, OP_CONST, OP_RET) && continue
+        node.op in (OP_ARG, OP_CONST, OP_RET, OP_PRIMITIVE) && continue
         push!(lines, "    logic [$(W-1):0] $(comb_wire(id));")
     end
     push!(lines, "")
+
+    # A primitive instance drives reg_wire(id, finish_cycle) directly from its
+    # rd_o (see primitive_instance_lines) rather than through the generic
+    # register chain below, but that wire still needs a declaration -- always,
+    # not just when max_cycle > 1, since a latency-1 primitive is possible.
+    if !isempty(primitive_ids)
+        push!(lines, "    // Primitive output registers")
+        for id in primitive_ids
+            node = graph.nodes[id]
+            push!(lines, "    logic [$(W-1):0] $(reg_wire(id, finish_cycle(node)));")
+        end
+        push!(lines, "")
+    end
 
     # Pipeline register declarations — one register per cycle from
     # scheduled_cycle through finish_cycle for each compute node.
     if max_cycle > 1
         push!(lines, "    // Pipeline stage registers")
         for (id, node) in graph.nodes
-            node.op in (OP_ARG, OP_CONST, OP_RET) && continue
+            node.op in (OP_ARG, OP_CONST, OP_RET, OP_PRIMITIVE) && continue
             fc = finish_cycle(node)
             for cyc in node.scheduled_cycle:fc
                 push!(lines, "    logic [$(W-1):0] $(reg_wire(id, cyc));")
@@ -178,19 +280,50 @@ function emit_verilog(graph::HWGraph, filepath::String; share=nothing)
     end
     push!(lines, "")
 
+    # Primitive instances — real pipelined modules from PrimitiveLibrary.jl,
+    # each with its own start-pulse delay (see the design note above
+    # primitive_instance_lines) so its result lands in reg_wire(id,
+    # finish_cycle) on exactly the cycle any consumer already expects it.
+    if !isempty(primitive_ids)
+        push!(lines, "    // Primitive instances")
+        for id in primitive_ids
+            append!(lines, primitive_instance_lines(graph.nodes[id], resolve))
+        end
+        push!(lines, "")
+
+        delayed_ids = [id for id in primitive_ids if graph.nodes[id].scheduled_cycle > 1]
+        if !isempty(delayed_ids)
+            push!(lines, "    // Primitive start-pulse delay registers")
+            push!(lines, "    always_ff @(posedge clk_i or negedge rst_ni) begin")
+            push!(lines, "        if (!rst_ni) begin")
+            for id in delayed_ids
+                push!(lines, "            prim$(id)_start_sr <= '0;")
+            end
+            push!(lines, "        end else if (!stall_i) begin")
+            for id in delayed_ids
+                delay = graph.nodes[id].scheduled_cycle - 1
+                shift_in = delay == 1 ? "start_i" : "{prim$(id)_start_sr[$(delay-2):0], start_i}"
+                push!(lines, "            prim$(id)_start_sr <= $(shift_in);")
+            end
+            push!(lines, "        end")
+            push!(lines, "    end")
+            push!(lines, "")
+        end
+    end
+
     # Pipeline flip-flops — chain registers across multi-cycle latency
     if max_cycle > 1
         push!(lines, "    always_ff @(posedge clk_i or negedge rst_ni) begin")
         push!(lines, "        if (!rst_ni) begin")
         for (id, node) in graph.nodes
-            node.op in (OP_ARG, OP_CONST, OP_RET) && continue
+            node.op in (OP_ARG, OP_CONST, OP_RET, OP_PRIMITIVE) && continue
             for cyc in node.scheduled_cycle:finish_cycle(node)
                 push!(lines, "            $(reg_wire(id, cyc)) <= '0;")
             end
         end
         push!(lines, "        end else if (!stall_i) begin")
         for (id, node) in graph.nodes
-            node.op in (OP_ARG, OP_CONST, OP_RET) && continue
+            node.op in (OP_ARG, OP_CONST, OP_RET, OP_PRIMITIVE) && continue
             fc = finish_cycle(node)
             # First register captures combinational result
             push!(lines, "            $(reg_wire(id, node.scheduled_cycle)) <= $(comb_wire(id));")
@@ -210,7 +343,7 @@ function emit_verilog(graph::HWGraph, filepath::String; share=nothing)
         port_names[findfirst(==(out_id), arg_ids)]
     elseif final_node.op == OP_CONST
         "$(W)'d$(final_node.const_val)"
-    elseif max_cycle > 1
+    elseif final_node.op == OP_PRIMITIVE || max_cycle > 1
         reg_wire(out_id, finish_cycle(final_node))
     else
         comb_wire(out_id)
