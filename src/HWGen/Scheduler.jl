@@ -5,6 +5,16 @@
 using DataStructures: PriorityQueue
 
 export schedule_asap!, topological_sort, finish_cycle, schedule_alap!, resource_requirements, resource_usage_timeline, schedule_list!, mux_alu_pathways!
+export asap_starts, alap_starts, mobility, check_schedule, forward_inputs
+
+# Timing rules shared by every scheduler in this file (ASAP, ALAP, list):
+#   - OP_ARG / OP_CONST start (and finish) at cycle 1.
+#   - A compute node (incl. OP_REG) starts the cycle AFTER its last forward input
+#     finishes: start(c) >= finish(dep) + 1, and finishes at start + latency - 1.
+#   - OP_RET is a marker, not an operation: it sits ON its input's finish cycle
+#     (no +1).
+#   - Latency L of a schedule = the latest finish of any compute node (1 if none).
+# ALAP is these same rules run backwards from L; keep the two in sync.
 
 is_primitive_node(node) = hasproperty(node, :primitive) && node.primitive !== nothing
 
@@ -33,23 +43,51 @@ finish_cycle(node::DFGNode)::Int =
     node.op == OP_RET ? node.scheduled_cycle :  # passthrough, see schedule_asap!
     node.scheduled_cycle + node.latency - 1
 
+"""
+    forward_inputs(node)
+
+The inputs that must be computed before `node` in the same iteration. For
+`OP_REG`, `inputs[2]` is the loop-carried update (a back-edge that feeds the
+*next* iteration), so only `inputs[1]` (the init value) counts.
+"""
+forward_inputs(node) = node.op == OP_REG && length(node.inputs) >= 2 ? node.inputs[1:1] : node.inputs
+
+# Latency a node will be scheduled with, computed without mutating it
+# (same rule `assign_latencies!` applies).
+function effective_latency(node)
+    is_primitive_node(node) && return primitive_latency(node)
+    node.latency == 0 && node.op ∉ (OP_ARG, OP_CONST, OP_RET) && return opcode_latency(node.op)
+    return node.latency
+end
+
+"Fill in each node's `latency` from `OP_LATENCY` / `PRIMITIVES` where it is unspecified."
+function assign_latencies!(graph::HWGraph)
+    for node in values(graph.nodes)
+        node.latency = effective_latency(node)
+    end
+    return graph
+end
+
+# finish cycle of `node` if it started at `start` (see the timing rules above)
+finish_at(node, start::Int) =
+    node.op in (OP_ARG, OP_CONST, OP_RET) ? start : start + effective_latency(node) - 1
+
+# Latency of a schedule given as `id => start`.
+function schedule_latency(graph::HWGraph, starts::Dict{Int,Int})
+    fins = [finish_at(n, starts[id]) for (id, n) in graph.nodes if effective_latency(n) > 0]
+    return isempty(fins) ? 1 : maximum(fins)
+end
+
 # Returns node IDs in topological order (sources first) via Kahn's algorithm.
 # OP_REG nodes have a structural back-edge in inputs[2] (the loop-body update
 # value). That edge is loop-carried and must NOT be counted as a forward
 # dependency — only inputs[1] (the init value) is a true forward edge.
-#
 # NOTE: A node may list the same input id more than once (e.g. ADD(x, x)).
 # We treat the graph as a multi-graph for edge counting so that Kahn's
 # in-degree arithmetic stays consistent: each slot in forward_inputs contributes
 # one unit of in-degree, and each processing step decrements exactly the count
 # of times the processed id appears in the consumer's forward_inputs.
 function topological_sort(graph::HWGraph)::Vector{Int}
-    # Helper: return the forward-edge inputs for a node.
-    # For OP_REG, only inputs[1] is a forward dependency (inputs[2] is back-edge).
-    function forward_inputs(node)
-        node.op == OP_REG && length(node.inputs) >= 2 ? node.inputs[1:1] : node.inputs
-    end
-
     # in_degree[id] = number of forward-edge input slots (counting duplicates)
     in_degree = Dict(id => 0 for id in keys(graph.nodes))
     for node in values(graph.nodes)
@@ -95,41 +133,14 @@ end
 #
 # Graph total latency = max finish_cycle among compute nodes (excl. OP_RET).
 function schedule_asap!(graph::HWGraph; resources=Dict())
-    # First: assign latencies where unspecified
-    for node in values(graph.nodes)
-        if is_primitive_node(node)
-            node.latency = primitive_latency(node)
-        elseif node.latency == 0 && !(node.op == OP_ARG || node.op == OP_CONST || node.op == OP_RET)
-            node.latency = opcode_latency(node.op)
-        end
-    end
+    assign_latencies!(graph)
 
-    # Quick unconstrained ASAP to get a baseline latency and earliest starts
-    for id in topological_sort(graph)
-        node = graph.nodes[id]
-        if isempty(node.inputs) || node.op == OP_ARG || node.op == OP_CONST
-            node.scheduled_cycle = 1
-        elseif node.op == OP_RET
-            dep = graph.nodes[node.inputs[1]]
-            node.scheduled_cycle = finish_cycle(dep)
-        elseif node.op == OP_REG
-            # OP_REG: only inputs[1] (init value) is a forward dependency.
-            # inputs[2] is the loop-body update — a back-edge, not a data
-            # dependency in the combinational scheduling sense.
-            dep = graph.nodes[node.inputs[1]]
-            node.scheduled_cycle = finish_cycle(dep) + 1
-        else
-            max_dep_finish = maximum(finish_cycle(graph.nodes[dep]) for dep in node.inputs)
-            node.scheduled_cycle = max_dep_finish + 1
-        end
-    end
-
-    # Baseline graph latency (may increase under resource constraints)
-    compute_nodes = [n for n in values(graph.nodes) if n.latency > 0]
-    graph.latency = isempty(compute_nodes) ? 1 : maximum(finish_cycle(n) for n in compute_nodes)
-
-    # Compute ALAP and slack based on baseline schedule
-    latest_start, slack = schedule_alap!(graph)
+    # Unconstrained ASAP gives the minimum latency; ALAP at that latency gives
+    # each node's deadline (latest start), used below as the list-scheduling
+    # priority. Both are pure: nothing here calls back into a scheduler.
+    asap = asap_starts(graph)
+    L_min = schedule_latency(graph, asap)
+    ls = alap_starts(graph, L_min)
 
     # Prepare for list scheduling: reset scheduled cycles for non-trivial nodes
     for node in values(graph.nodes)
@@ -159,13 +170,13 @@ function schedule_asap!(graph::HWGraph; resources=Dict())
             deps_scheduled = all(
                 graph.nodes[d].scheduled_cycle != 0
                 for d in (node.op == OP_REG && length(node.inputs) >= 2
-                           ? node.inputs[1:1]   # only forward dep for OP_REG
-                           : node.inputs)
+                      ? node.inputs[1:1]   # only forward dep for OP_REG
+                      : node.inputs)
             )
             if deps_scheduled
                 # earliest dynamic start based on actual forward deps
                 fwd_deps = (node.op == OP_REG && length(node.inputs) >= 2
-                             ? node.inputs[1:1] : node.inputs)
+                            ? node.inputs[1:1] : node.inputs)
                 earliest = isempty(fwd_deps) ? 1 : maximum(finish_cycle(graph.nodes[d]) for d in fwd_deps) + 1
                 if earliest <= cycle
                     push!(ready, id)
@@ -173,7 +184,7 @@ function schedule_asap!(graph::HWGraph; resources=Dict())
             end
         end
 
-        # Group ready nodes by opcode and sort by least slack first
+        # Group ready nodes by opcode, most urgent first
         scheduled_this_cycle = false
         by_op = Dict{Any,Vector{Int}}()
         for id in ready
@@ -182,8 +193,12 @@ function schedule_asap!(graph::HWGraph; resources=Dict())
         end
 
         for (key, ids) in by_op
-            # sort by slack (least slack first) then by earlier baseline ASAP then id
-            sort!(ids, by=x -> (slack[x], graph.nodes[x].scheduled_cycle == 0 ? typemax(Int) : graph.nodes[x].scheduled_cycle, x))
+            # Earliest deadline (ALAP start) first. Every node in `ids` is being
+            # placed at the same `cycle`, so ordering by ls[x] is ordering by its
+            # real remaining slack, ls[x] - cycle, even after resource conflicts
+            # have pushed it past its ASAP start. (A precomputed ALAP - ASAP
+            # slack goes stale exactly then.) Node id breaks ties deterministically.
+            sort!(ids, by=x -> (ls[x], x))
             b = budget_for(key)
             # ensure timeline map exists
             timeline = get!(resource_timeline, key, Dict{Int,Int}())
@@ -216,6 +231,13 @@ function schedule_asap!(graph::HWGraph; resources=Dict())
         if !scheduled_this_cycle
             cycle += 1
         end
+    end
+
+    # OP_RET was reset to 0 above and never revisited; put it back on its
+    # input's finish cycle so the graph state is a consistent schedule.
+    for node in values(graph.nodes)
+        node.op == OP_RET && !isempty(node.inputs) &&
+            (node.scheduled_cycle = finish_cycle(graph.nodes[node.inputs[1]]))
     end
 
     # Recompute graph latency after resource-constrained scheduling
@@ -268,58 +290,145 @@ function resource_requirements(graph::HWGraph)
     return peak
 end
 
-function schedule_alap!(graph::HWGraph)
-    # Ensure graph latency and per-node latencies/scheduled_cycle are available
-    if graph.latency == 0
-        schedule_asap!(graph)
-    end
+"""
+    asap_starts(graph) -> Dict{Int,Int}
 
-    # Build consumer lists: for each node, which nodes use it as input
-    consumers = Dict(id => Int[] for id in keys(graph.nodes))
-    for (id, node) in graph.nodes
-        for inp in node.inputs
-            push!(consumers[inp], id)
-        end
-    end
-
-    # We'll walk nodes in reverse topological order so consumers are processed
-    # before their dependencies.
-    rev_order = reverse(topological_sort(graph))
-
-    # latest_start hold the latest cycle a node may start while still
-    # meeting the overall graph latency. Initialize conservatively to
-    # the graph latency for every node.
-    latest_start = Dict{Int,Int}(id => graph.latency for id in keys(graph.nodes))
-
-    for id in rev_order
+Earliest start cycle of every node with unlimited resources (the timing rules at
+the top of this file). Pure: reads the graph, mutates nothing.
+"""
+function asap_starts(graph::HWGraph)::Dict{Int,Int}
+    s = Dict{Int,Int}()
+    fin(id) = finish_at(graph.nodes[id], s[id])
+    for id in topological_sort(graph)
         node = graph.nodes[id]
-
-        if isempty(consumers[id])
-            # No consumers: value must be ready by the graph latency
-            latest_start[id] = graph.latency
+        s[id] = if isempty(node.inputs) || node.op in (OP_ARG, OP_CONST)
+            1
+        elseif node.op == OP_RET
+            fin(node.inputs[1])                               # sits on its input's finish
         else
-            # For each consumer c, the dependency must finish by
-            # latest_start[c] - 1. Thus the latest start for this node
-            # is min_c ( latest_start[c] - node.latency ).
-            candidate = typemax(Int)
-            for c in consumers[id]
-                v = latest_start[c] - node.latency
-                if v < candidate
-                    candidate = v
-                end
-            end
-            # Ensure at least cycle 1
-            latest_start[id] = max(1, candidate)
+            maximum(fin(d) for d in forward_inputs(node)) + 1 # OP_REG: init value only
         end
     end
+    return s
+end
 
-    # Compute slack = latest_start - earliest_start (earliest stored
-    # previously in node.scheduled_cycle by schedule_asap!). Return both
-    # mappings so callers can inspect or use them.
-    slack = Dict{Int,Int}()
-    for (id, node) in graph.nodes
-        slack[id] = latest_start[id] - node.scheduled_cycle
+"""
+    alap_starts(graph, L) -> Dict{Int,Int}
+
+Latest start cycle of every node such that every compute node finishes by cycle
+`L`: ASAP's rules run backwards. Pure: reads the graph, mutates nothing.
+
+It works with *deadlines* (the cycle by which a node must have finished):
+- consumed by a compute node `c`: finish by `ls[c] - 1` (c starts the cycle after);
+- consumed by `OP_RET`: finish by `L` (RET sits *on* its input's finish cycle, no +1);
+- no consumers: finish by `L`.
+A node's latest start is then `min(deadlines) - latency + 1`. Loop back-edges
+(`OP_REG` `inputs[2]`) are not dependencies. Values are not clamped: if `L` is
+below the minimum latency some starts come out earlier than possible, which
+[`mobility`](@ref) / [`schedule_alap!`](@ref) report as an error.
+"""
+function alap_starts(graph::HWGraph, L::Int)::Dict{Int,Int}
+    consumers = Dict(id => Int[] for id in keys(graph.nodes))
+    for (id, node) in graph.nodes, inp in forward_inputs(node)
+        push!(consumers[inp], id)
     end
+    ls = Dict{Int,Int}()
+    for id in reverse(topological_sort(graph))
+        node = graph.nodes[id]
+        if node.op in (OP_ARG, OP_CONST)
+            ls[id] = 1                       # graph inputs are available at cycle 1
+        elseif node.op == OP_RET
+            ls[id] = L                       # placeholder; set from its input below
+        else
+            deadline = L
+            for c in consumers[id]
+                need = graph.nodes[c].op == OP_RET ? L : ls[c] - 1
+                deadline = min(deadline, need)
+            end
+            ls[id] = deadline - effective_latency(node) + 1
+        end
+    end
+    for (id, node) in graph.nodes            # RET marks its input's (ALAP) finish
+        node.op == OP_RET && !isempty(node.inputs) &&
+            (ls[id] = finish_at(graph.nodes[node.inputs[1]], ls[node.inputs[1]]))
+    end
+    return ls
+end
 
-    return latest_start, slack
+"""
+    mobility(graph; latency=nothing) -> Dict{Int,Tuple{Int,Int}}
+
+`id => (earliest, latest)` start cycle of every compute node for a target
+`latency` (default: the minimum latency). `latest - earliest` is the node's
+slack: 0 on the critical path. Throws if `latency` is below the minimum.
+"""
+function mobility(graph::HWGraph; latency::Union{Nothing,Int}=nothing)
+    asap = asap_starts(graph)
+    L_min = schedule_latency(graph, asap)
+    L = latency === nothing ? L_min : latency
+    L >= L_min || error("latency $L is infeasible for graph '$(graph.name)': minimum latency is $L_min")
+    ls = alap_starts(graph, L)
+    win = Dict{Int,Tuple{Int,Int}}()
+    for (id, node) in graph.nodes
+        node.op in (OP_ARG, OP_CONST, OP_RET) && continue
+        ls[id] >= asap[id] || error("internal: node $id ($(node.op)) latest start $(ls[id]) " *
+                                    "< earliest $(asap[id]) at latency $L >= minimum $L_min")
+        win[id] = (asap[id], ls[id])
+    end
+    return win
+end
+
+"""
+    schedule_alap!(graph; latency=nothing) -> graph
+
+Schedule every node as late as possible while finishing by `latency` (default:
+the minimum latency). Sets each node's `scheduled_cycle` and `graph.latency`;
+throws if `latency` is below the minimum. Unlimited resources, like ASAP.
+"""
+function schedule_alap!(graph::HWGraph; latency::Union{Nothing,Int}=nothing)
+    assign_latencies!(graph)
+    win = mobility(graph; latency)                 # validates the target
+    L = latency === nothing ? schedule_latency(graph, asap_starts(graph)) : latency
+    ls = alap_starts(graph, L)
+    for (id, node) in graph.nodes
+        node.scheduled_cycle = ls[id]
+    end
+    graph.latency = L
+    return graph
+end
+
+"""
+    check_schedule(graph) -> true
+
+Throw an `ErrorException` listing every violation of the timing rules (top of
+this file) in `graph`'s current schedule: inputs not at cycle 1, a compute node
+starting before one of its forward inputs has finished, an `OP_RET` not on its
+input's finish cycle, or `graph.latency` not matching the latest finish.
+Use it after any scheduler (ASAP, ALAP, list, resource-constrained).
+"""
+function check_schedule(graph::HWGraph)
+    bad = String[]
+    for id in sort(collect(keys(graph.nodes)))
+        node = graph.nodes[id]
+        if node.op in (OP_ARG, OP_CONST)
+            node.scheduled_cycle == 1 || push!(bad, "node $id ($(node.op)) at cycle $(node.scheduled_cycle), expected 1")
+        elseif node.op == OP_RET
+            isempty(node.inputs) && continue
+            f = finish_cycle(graph.nodes[node.inputs[1]])
+            node.scheduled_cycle == f ||
+                push!(bad, "node $id (OP_RET) at cycle $(node.scheduled_cycle), expected its input's finish $f")
+        else
+            node.scheduled_cycle >= 1 || push!(bad, "node $id ($(node.op)) is unscheduled (cycle $(node.scheduled_cycle))")
+            for d in forward_inputs(node)
+                f = finish_cycle(graph.nodes[d])
+                node.scheduled_cycle >= f + 1 ||
+                    push!(bad, "node $id ($(node.op)) starts at $(node.scheduled_cycle) but input $d finishes at $f")
+            end
+        end
+    end
+    compute = [n for n in values(graph.nodes) if n.latency > 0]
+    L = isempty(compute) ? 1 : maximum(finish_cycle(n) for n in compute)
+    graph.latency == L || push!(bad, "graph.latency = $(graph.latency) but the latest finish is $L")
+    isempty(bad) || error("invalid schedule for '$(graph.name)':\n  " * join(bad, "\n  "))
+    return true
 end
